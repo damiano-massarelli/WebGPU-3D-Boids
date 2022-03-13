@@ -19,9 +19,14 @@ struct Particles {
     particles: array<Particle>;
 };
 
+struct CameraData {
+    viewProjectionMatrix: mat4x4<f32>; // 0
+    position: vec3<f32>;               // 64
+};
+
 struct LightData {
     position: vec4<f32>;       // 0
-    cameraPosition: vec4<f32>; // 16
+    direction: vec4<f32>;      // 16
     color: vec4<f32>;          // 32
     ambientIntensity: f32;     // 48
     specularIntensity: f32;    // 52
@@ -32,13 +37,18 @@ struct Material {
     shininess: f32;   // 16
 };
 
-fn computeLight(light: LightData, material: Material, position: vec3<f32>, normal: vec3<f32>) -> vec4<f32> {
+fn computeLight(light: LightData, material: Material, cameraPosition: vec3<f32>, position: vec3<f32>, normal: vec3<f32>) -> vec4<f32> {
     let N: vec3<f32> = normalize(normal.xyz);
-    let L: vec3<f32> = normalize(light.position.xyz - position.xyz);
-    let V: vec3<f32> = normalize(light.cameraPosition.xyz - position.xyz);
+    let L: vec3<f32> = normalize(-light.direction.xyz);
+    let V: vec3<f32> = normalize(cameraPosition.xyz - position.xyz);
     let H: vec3<f32> = normalize(L + V);
-    let kD: f32 = max(dot(N, L), 0.0) + light.ambientIntensity;
-    let kS: f32 = light.specularIntensity * pow(max(dot(N, H), 0.0), material.shininess);
+    let NdotL = max(dot(N, L), 0.0);
+    let kD: f32 = NdotL + light.ambientIntensity;
+    var kSEnabled = 0.0;
+    if (NdotL > 0.0) {
+        kSEnabled = 1.0;
+    }
+    let kS: f32 = kSEnabled * light.specularIntensity * pow(max(dot(N, H), 0.0), material.shininess);
     let finalColor = material.color.rgb * light.color.rgb * kD + light.color.rgb * kS;
     return vec4<f32>(finalColor, material.color.a);
 };
@@ -57,7 +67,11 @@ var<storage, read_write> particlesB: Particles;
 
 @group(0)
 @binding(3)
-var<uniform> viewProjectionMatrix: mat4x4<f32>;
+var<uniform> cameraData: CameraData;
+
+@group(0)
+@binding(4)
+var<uniform> lightData: LightData;
 
 @stage(compute)
 @workgroup_size(64)
@@ -169,11 +183,17 @@ fn mainCS(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     particlesB.particles[index].vel = vec4<f32>(vVel, 0.0);
 }
 
-struct DebugOutput {
+struct VSOutBoids {
     @builtin(position)
     pos: vec4<f32>;
 
     @location(0)
+    wsPos: vec4<f32>;
+
+    @location(1)
+    wsNormal: vec4<f32>;
+
+    @location(2)
     col: vec4<f32>;
 };
 
@@ -181,7 +201,7 @@ struct DebugOutput {
 fn mainVS(@location(0) a_particlePos : vec3<f32>,
              @location(1) a_particleVel : vec3<f32>,
              @location(2) a_pos : vec3<f32>,
-             @location(3) a_norm: vec3<f32>) -> DebugOutput {
+             @location(3) a_norm: vec3<f32>) -> VSOutBoids {
   
     // y points towards velocity
     let up = normalize(a_particleVel);
@@ -195,31 +215,27 @@ fn mainVS(@location(0) a_particlePos : vec3<f32>,
         vec4<f32>(a_particlePos, 1.0)
     );
 
-    var output: DebugOutput;
+    var output: VSOutBoids;
     let wsPosition = worldMatrix * vec4<f32>(a_pos, 1.0);
     let wsNormal = worldMatrix * vec4<f32>(a_norm, 0.0); // this is ok since there is no scale
 
-    var m: Material;
-    m.color = vec4<f32>((a_particleVel + 1.0) / 2.0, 1.0);
-    m.shininess = 32.0;
+    var material: Material;
+    material.color = vec4<f32>((a_particleVel + 1.0) / 2.0, 1.0);
+    material.shininess = 32.0;
 
-    var l: LightData;
-    l.position = vec4<f32>(0.0, 30.0, 0.0, 0.0);
-    l.cameraPosition = vec4<f32>(0.0, 0.0, 30.0, 0.0);
-    l.color = vec4<f32>(1.0, 1.0, 1.0, 1.0);
-    l.ambientIntensity = 0.5;
-    l.specularIntensity = 0.8;
-
-    output.pos = viewProjectionMatrix * wsPosition;
-    //output.col = vec4<f32>((a_particleVel + 1.0) / 2.0, 1.0);
-    output.col = computeLight(l, m, wsPosition.xyz, wsNormal.xyz);
-;
+    output.pos = cameraData.viewProjectionMatrix * wsPosition;
+    output.wsPos = wsPosition;
+    output.wsNormal = wsNormal;
+    output.col = vec4<f32>((a_particleVel + 1.0) / 2.0, 1.0);
     return output;
 }
 
 @stage(fragment)
-fn mainFS(@location(0) col: vec4<f32>) -> @location(0) vec4<f32> {
-  return col;
+fn mainFS(in: VSOutBoids) -> @location(0) vec4<f32> {
+    var material: Material;
+    material.color = in.col;
+    material.shininess = 12.0;
+    return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, in.wsNormal.xyz);
 }
 
 @stage(vertex)
@@ -255,7 +271,7 @@ fn mainVSOutline(@location(0) a_particlePos : vec3<f32>,
       vec4<f32>(0.0, 0.0, 0.0, 1.0)
   );
 
-  return viewProjectionMatrix * worldMatrix * scale * vec4<f32>(a_pos, 1.0);
+  return cameraData.viewProjectionMatrix * worldMatrix * scale * vec4<f32>(a_pos, 1.0);
 }
 
 @stage(fragment)
@@ -268,7 +284,10 @@ struct BoxData {
     position: vec4<f32>;
 
     @location(0)
-    normal: vec3<f32>;
+    wsPos: vec4<f32>;
+
+    @location(1)
+    wsNormal: vec3<f32>;
 };
 
 @stage(vertex)
@@ -282,15 +301,30 @@ fn mainVSBox(@location(0) a_pos : vec3<f32>,
     );
  
     var out: BoxData;
-    out.position = viewProjectionMatrix * scale * vec4<f32>(a_pos, 1.0);
-    out.normal = a_norm;
+    out.wsPos = scale * vec4<f32>(a_pos, 1.0);
+    out.position = cameraData.viewProjectionMatrix * out.wsPos;
+    out.wsNormal = a_norm;
     return out;
 }
 
 @stage(fragment)
-fn mainFSBox(in: BoxData) -> @location(0) vec4<f32> {
-    if (in.normal.y < -0.5) {
-        return vec4<f32>(0.15, 0.15, 0.15, 1.0);
+fn mainFSBox(in: BoxData, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4<f32> {
+    var material: Material;
+    material.color = vec4<f32>(1.0, 1.0, 1.0, 0.1);
+    var wsNormal = in.wsNormal;
+
+    // make sure the normal always points towards the light source
+    if (dot(-lightData.direction.xyz, in.wsNormal) < 0.0) {
+        wsNormal = -wsNormal;
     }
-    return vec4<f32>(1.0, 1.0, 1.0, 0.1);
+
+    // use a different color for the cube base
+    if (in.wsNormal.y > 0.5) {
+        material.color = vec4<f32>(0.15, 0.15, 0.15, 1.0);
+    }
+
+    material.shininess = 50.0;
+    var localLightData = lightData;
+    localLightData.specularIntensity = lightData.specularIntensity / 2.0;
+    return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, wsNormal);
 }

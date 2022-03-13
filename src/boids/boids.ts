@@ -2,6 +2,7 @@ import { cone, cube } from "./3d-primitives";
 import { FreeControlledCamera } from "./camera";
 import shader from "./shaders.wgsl";
 import * as dat from "dat.gui";
+import { vec4 } from "gl-matrix";
 
 async function configureCanvas(canvasId: string, useDevicePixelRatio: boolean) {
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
@@ -58,9 +59,43 @@ export async function run() {
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
+    const renderBindGroupLayout = device.createBindGroupLayout({
+        label: "render bind group layout",
+        entries: [
+            {
+                // Simulation params
+                binding: 0,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                buffer: {
+                    type: "uniform",
+                },
+            },
+            {
+                // Camera
+                binding: 3,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                buffer: {
+                    type: "uniform",
+                },
+            },
+            {
+                // Light
+                binding: 4,
+                visibility: GPUShaderStage.FRAGMENT,
+                buffer: {
+                    type: "uniform",
+                },
+            },
+        ],
+    });
+
     // render pipeline
     const renderPipeline = device.createRenderPipeline({
         label: "render pipeline",
+        layout: device.createPipelineLayout({
+            label: "boid render pipeline layout",
+            bindGroupLayouts: [renderBindGroupLayout],
+        }),
         vertex: {
             module: shaderModule,
             entryPoint: "mainVS",
@@ -133,31 +168,11 @@ export async function run() {
         },
     });
 
-    const renderBindGroupBoxLayout = device.createBindGroupLayout({
-        label: "box bind group layout",
-        entries: [
-            {
-                binding: 0,
-                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-                buffer: {
-                    type: "uniform",
-                },
-            },
-            {
-                binding: 3,
-                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-                buffer: {
-                    type: "uniform",
-                },
-            },
-        ],
-    });
-
     const boxPipelineDescr: GPURenderPipelineDescriptor = {
         label: "render pipeline box",
         layout: device.createPipelineLayout({
             label: "box pipeline layout",
-            bindGroupLayouts: [renderBindGroupBoxLayout],
+            bindGroupLayouts: [renderBindGroupLayout],
         }),
         vertex: {
             module: shaderModule,
@@ -234,6 +249,10 @@ export async function run() {
     // render pipeline for outline
     const renderPipelineOutline = device.createRenderPipeline({
         label: "render pipeline outline",
+        layout: device.createPipelineLayout({
+            label: "outline pipeline layout",
+            bindGroupLayouts: [renderBindGroupLayout],
+        }),
         vertex: {
             module: shaderModule,
             entryPoint: "mainVSOutline",
@@ -432,6 +451,33 @@ export async function run() {
     }
     updateSimParams();
 
+    // Light data
+    const lightPosition = vec4.fromValues(-30, 40, -10, 0);
+    const lightDirection = vec4.create();
+    vec4.negate(lightDirection, lightPosition);
+    vec4.normalize(lightDirection, lightDirection);
+    const lightData = {
+        position: lightPosition,
+        direction: lightDirection,
+        color: vec4.fromValues(0.8, 0.8, 0.8, 1.0),
+        ambientIntensity: 0.5,
+        specularIntensity: 0.8,
+    };
+    const lightDataBuffer = device.createBuffer({
+        label: "light data buffer",
+        size: 14 * 4,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        mappedAtCreation: true,
+    });
+    new Float32Array(lightDataBuffer.getMappedRange()).set([
+        ...lightData.position,
+        ...lightData.direction,
+        ...lightData.color,
+        lightData.ambientIntensity,
+        lightData.specularIntensity,
+    ]);
+    lightDataBuffer.unmap();
+
     // setup ping-pong buffers for boids position and velocity
     const NUM_PARTICLES = 650;
     const initialParticleData = new Float32Array(NUM_PARTICLES * 8); // x, y, z, vx, vy, vz per particle + padding
@@ -467,40 +513,14 @@ export async function run() {
 
     const cameraBuffer = device.createBuffer({
         label: "cameraBuffer",
-        size: 16 * Float32Array.BYTES_PER_ELEMENT,
+        size: (16 + 3) * Float32Array.BYTES_PER_ELEMENT,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         mappedAtCreation: false,
     });
 
     const renderBindGroup = device.createBindGroup({
-        label: "render bind group",
-        layout: renderPipeline.getBindGroupLayout(0),
-        entries: [
-            {
-                binding: 3,
-                resource: {
-                    buffer: cameraBuffer,
-                },
-            },
-        ],
-    });
-
-    const renderBindGroupOutline = device.createBindGroup({
-        label: "render bind group outline",
-        layout: renderPipelineOutline.getBindGroupLayout(0),
-        entries: [
-            {
-                binding: 3,
-                resource: {
-                    buffer: cameraBuffer,
-                },
-            },
-        ],
-    });
-
-    const renderBindGroupBox = device.createBindGroup({
         label: "render bind group box",
-        layout: renderBindGroupBoxLayout,
+        layout: renderBindGroupLayout,
         entries: [
             {
                 binding: 0,
@@ -512,6 +532,12 @@ export async function run() {
                 binding: 3,
                 resource: {
                     buffer: cameraBuffer,
+                },
+            },
+            {
+                binding: 4,
+                resource: {
+                    buffer: lightDataBuffer,
                 },
             },
         ],
@@ -556,6 +582,11 @@ export async function run() {
             cameraBuffer,
             0,
             camera.updateAndGetViewProjectionMatrix()
+        );
+        device.queue.writeBuffer(
+            cameraBuffer,
+            16 * Float32Array.BYTES_PER_ELEMENT,
+            new Float32Array(camera.position)
         );
 
         const commandEncoder = device.createCommandEncoder();
@@ -632,7 +663,7 @@ export async function run() {
             passEncoder.setVertexBuffer(1, conePB);
             passEncoder.setVertexBuffer(2, coneNB);
             passEncoder.setIndexBuffer(coneIB, "uint32");
-            passEncoder.setBindGroup(0, renderBindGroupOutline);
+            passEncoder.setBindGroup(0, renderBindGroup);
             passEncoder.setStencilReference(0x01);
             passEncoder.drawIndexed(coneIndices.length, NUM_PARTICLES);
             passEncoder.end();
@@ -660,7 +691,7 @@ export async function run() {
             });
 
             passEncoder.setPipeline(renderPipelineBoxBack);
-            passEncoder.setBindGroup(0, renderBindGroupBox);
+            passEncoder.setBindGroup(0, renderBindGroup);
             passEncoder.setVertexBuffer(0, cubePB);
             passEncoder.setVertexBuffer(1, cubeNB);
             passEncoder.setIndexBuffer(cubeIB, "uint32");
