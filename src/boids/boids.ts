@@ -133,9 +133,32 @@ export async function run() {
         },
     });
 
-    // render pipeline for box
-    const renderPipelineBox = device.createRenderPipeline({
+    const renderBindGroupBoxLayout = device.createBindGroupLayout({
+        label: "box bind group layout",
+        entries: [
+            {
+                binding: 0,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                buffer: {
+                    type: "uniform",
+                },
+            },
+            {
+                binding: 3,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                buffer: {
+                    type: "uniform",
+                },
+            },
+        ],
+    });
+
+    const boxPipelineDescr: GPURenderPipelineDescriptor = {
         label: "render pipeline box",
+        layout: device.createPipelineLayout({
+            label: "box pipeline layout",
+            bindGroupLayouts: [renderBindGroupBoxLayout],
+        }),
         vertex: {
             module: shaderModule,
             entryPoint: "mainVSBox",
@@ -193,13 +216,20 @@ export async function run() {
         },
         primitive: {
             topology: "triangle-list",
+            cullMode: "front",
         },
         depthStencil: {
             format: "depth24plus-stencil8",
             depthWriteEnabled: false,
             depthCompare: "less",
         },
-    });
+    };
+
+    // render pipeline for box
+    const renderPipelineBoxBack = device.createRenderPipeline(boxPipelineDescr);
+    boxPipelineDescr.primitive!.cullMode = "back";
+    const renderPipelineBoxFront =
+        device.createRenderPipeline(boxPipelineDescr);
 
     // render pipeline for outline
     const renderPipelineOutline = device.createRenderPipeline({
@@ -368,9 +398,9 @@ export async function run() {
         rule1Scale: 0.02,
         rule2Scale: 0.02,
         rule3Scale: 0.075,
-        boxWidth: 18,
+        boxWidth: 20,
         boxHeight: 12,
-        showOutline: true,
+        showOutline: false,
     };
     Object.keys(simParams).forEach((k) => {
         gui.add(simParams, k).onFinishChange(updateSimParams);
@@ -403,7 +433,7 @@ export async function run() {
     updateSimParams();
 
     // setup ping-pong buffers for boids position and velocity
-    const NUM_PARTICLES = 550;
+    const NUM_PARTICLES = 650;
     const initialParticleData = new Float32Array(NUM_PARTICLES * 8); // x, y, z, vx, vy, vz per particle + padding
     for (let i = 0; i < NUM_PARTICLES; ++i) {
         initialParticleData[8 * i + 0] =
@@ -470,7 +500,7 @@ export async function run() {
 
     const renderBindGroupBox = device.createBindGroup({
         label: "render bind group box",
-        layout: renderPipelineBox.getBindGroupLayout(0),
+        layout: renderBindGroupBoxLayout,
         entries: [
             {
                 binding: 0,
@@ -543,7 +573,7 @@ export async function run() {
                 colorAttachments: [
                     {
                         loadOp: "clear",
-                        clearValue: [0, 0, 0, 1],
+                        clearValue: [0.08, 0.1, 0.54, 1],
                         storeOp: "store",
                         view: context!.getCurrentTexture().createView(),
                     },
@@ -629,12 +659,16 @@ export async function run() {
                 },
             });
 
-            passEncoder.setPipeline(renderPipelineBox);
+            passEncoder.setPipeline(renderPipelineBoxBack);
+            passEncoder.setBindGroup(0, renderBindGroupBox);
             passEncoder.setVertexBuffer(0, cubePB);
             passEncoder.setVertexBuffer(1, cubeNB);
             passEncoder.setIndexBuffer(cubeIB, "uint32");
-            passEncoder.setBindGroup(0, renderBindGroupBox);
             passEncoder.drawIndexed(cubeIndices.length, 1);
+
+            passEncoder.setPipeline(renderPipelineBoxFront);
+            passEncoder.drawIndexed(cubeIndices.length, 1);
+
             passEncoder.end();
         }
 
