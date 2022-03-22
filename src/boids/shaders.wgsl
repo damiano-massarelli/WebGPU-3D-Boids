@@ -29,12 +29,12 @@ struct LightData {
     direction: vec4<f32>;      // 16
     color: vec4<f32>;          // 32
     ambientIntensity: f32;     // 48
-    specularIntensity: f32;    // 52
 };
 
 struct Material {
-    color: vec4<f32>; // 0
-    shininess: f32;   // 16
+    color: vec4<f32>;        // 0
+    shininess: f32;          // 16
+    specularIntensity: f32;  // 20
 };
 
 fn computeLight(light: LightData, material: Material, cameraPosition: vec3<f32>, position: vec3<f32>, normal: vec3<f32>) -> vec4<f32> {
@@ -48,7 +48,7 @@ fn computeLight(light: LightData, material: Material, cameraPosition: vec3<f32>,
     if (NdotL > 0.0) {
         kSEnabled = 1.0;
     }
-    let kS: f32 = kSEnabled * light.specularIntensity * pow(max(dot(N, H), 0.0), material.shininess);
+    let kS: f32 = kSEnabled * material.specularIntensity * pow(max(dot(N, H), 0.0), material.shininess);
     let finalColor = material.color.rgb * light.color.rgb * kD + light.color.rgb * kS;
     return vec4<f32>(finalColor, material.color.a);
 };
@@ -219,10 +219,6 @@ fn mainVS(@location(0) a_particlePos : vec3<f32>,
     let wsPosition = worldMatrix * vec4<f32>(a_pos, 1.0);
     let wsNormal = worldMatrix * vec4<f32>(a_norm, 0.0); // this is ok since there is no scale
 
-    var material: Material;
-    material.color = vec4<f32>((a_particleVel + 1.0) / 2.0, 1.0);
-    material.shininess = 32.0;
-
     output.pos = cameraData.viewProjectionMatrix * wsPosition;
     output.wsPos = wsPosition;
     output.wsNormal = wsNormal;
@@ -235,6 +231,7 @@ fn mainFS(in: VSOutBoids) -> @location(0) vec4<f32> {
     var material: Material;
     material.color = in.col;
     material.shininess = 12.0;
+    material.specularIntensity = 0.3;
     return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, in.wsNormal.xyz);
 }
 
@@ -310,7 +307,7 @@ fn mainVSBox(@location(0) a_pos : vec3<f32>,
 @stage(fragment)
 fn mainFSBox(in: BoxData, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4<f32> {
     var material: Material;
-    material.color = vec4<f32>(1.0, 1.0, 1.0, 0.1);
+    material.color = vec4<f32>(.8, .8, .8, 0.1);
     var wsNormal = in.wsNormal;
 
     // make sure the normal always points towards the light source
@@ -323,8 +320,7 @@ fn mainFSBox(in: BoxData, @builtin(front_facing) frontFacing: bool) -> @location
         material.color = vec4<f32>(0.15, 0.15, 0.15, 1.0);
     }
 
-    material.shininess = 50.0;
-    var localLightData = lightData;
-    localLightData.specularIntensity = lightData.specularIntensity / 2.0;
+    material.shininess = 10.0;
+    material.specularIntensity = 0.1;
     return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, wsNormal);
 }

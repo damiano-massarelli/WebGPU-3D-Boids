@@ -31,6 +31,7 @@ async function configureCanvas(canvasId: string, useDevicePixelRatio: boolean) {
         device,
         size: presentationSize,
         format: presentationFormat,
+        compositingAlphaMode: "opaque",
     });
 
     return { device, canvas, context, presentationSize, presentationFormat };
@@ -461,7 +462,6 @@ export async function run() {
         direction: lightDirection,
         color: vec4.fromValues(0.8, 0.8, 0.8, 1.0),
         ambientIntensity: 0.5,
-        specularIntensity: 0.8,
     };
     const lightDataBuffer = device.createBuffer({
         label: "light data buffer",
@@ -474,7 +474,6 @@ export async function run() {
         ...lightData.direction,
         ...lightData.color,
         lightData.ambientIntensity,
-        lightData.specularIntensity,
     ]);
     lightDataBuffer.unmap();
 
