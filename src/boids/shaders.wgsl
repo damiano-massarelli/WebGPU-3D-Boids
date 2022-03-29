@@ -25,10 +25,11 @@ struct CameraData {
 };
 
 struct LightData {
-    position: vec4<f32>;       // 0
-    direction: vec4<f32>;      // 16
-    color: vec4<f32>;          // 32
-    ambientIntensity: f32;     // 48
+    viewProjectionMatrix: mat4x4<f32>; // 0
+    position: vec4<f32>;               // 64
+    direction: vec4<f32>;              // 80
+    color: vec4<f32>;                  // 96
+    ambientIntensity: f32;             // 112
 };
 
 struct Material {
@@ -37,18 +38,18 @@ struct Material {
     specularIntensity: f32;  // 20
 };
 
-fn computeLight(light: LightData, material: Material, cameraPosition: vec3<f32>, position: vec3<f32>, normal: vec3<f32>) -> vec4<f32> {
+fn computeLight(light: LightData, material: Material, cameraPosition: vec3<f32>, position: vec3<f32>, normal: vec3<f32>, visibility: f32) -> vec4<f32> {
     let N: vec3<f32> = normalize(normal.xyz);
     let L: vec3<f32> = normalize(-light.direction.xyz);
     let V: vec3<f32> = normalize(cameraPosition.xyz - position.xyz);
     let H: vec3<f32> = normalize(L + V);
     let NdotL = max(dot(N, L), 0.0);
-    let kD: f32 = NdotL + light.ambientIntensity;
+    let kD: f32 = visibility * NdotL + light.ambientIntensity;
     var kSEnabled = 0.0;
     if (NdotL > 0.0) {
         kSEnabled = 1.0;
     }
-    let kS: f32 = kSEnabled * material.specularIntensity * pow(max(dot(N, H), 0.0), material.shininess);
+    let kS: f32 = visibility * kSEnabled * material.specularIntensity * pow(max(dot(N, H), 0.0), material.shininess);
     let finalColor = material.color.rgb * light.color.rgb * kD + light.color.rgb * kS;
     return vec4<f32>(finalColor, material.color.a);
 };
@@ -72,6 +73,14 @@ var<uniform> cameraData: CameraData;
 @group(0)
 @binding(4)
 var<uniform> lightData: LightData;
+
+@group(0)
+@binding(5) 
+var shadowMap: texture_depth_2d;
+
+@group(0) 
+@binding(6) 
+var shadowSampler: sampler_comparison;
 
 @stage(compute)
 @workgroup_size(64)
@@ -195,16 +204,15 @@ struct VSOutBoids {
 
     @location(2)
     col: vec4<f32>;
+
+    // xy texel position, z: depth from light
+    @location(3)
+    shadowMap: vec3<f32>;
 };
 
-@stage(vertex)
-fn mainVS(@location(0) a_particlePos : vec3<f32>,
-             @location(1) a_particleVel : vec3<f32>,
-             @location(2) a_pos : vec3<f32>,
-             @location(3) a_norm: vec3<f32>) -> VSOutBoids {
-  
+fn getBoidWorldMatrix(position: vec3<f32>, velocity: vec3<f32>) -> mat4x4<f32> {
     // y points towards velocity
-    let up = normalize(a_particleVel);
+    let up = normalize(velocity);
     let right = normalize(cross(up, vec3<f32>(0.0, 0.0, 1.0)));
     let forward = normalize(cross(right, up));
 
@@ -212,12 +220,28 @@ fn mainVS(@location(0) a_particlePos : vec3<f32>,
         vec4<f32>(right, 0.0),
         vec4<f32>(up, 0.0),
         vec4<f32>(forward, 0.0),
-        vec4<f32>(a_particlePos, 1.0)
+        vec4<f32>(position, 1.0)
     );
+
+    return worldMatrix;
+}
+
+@stage(vertex)
+fn mainVS(@location(0) a_particlePos : vec3<f32>,
+             @location(1) a_particleVel : vec3<f32>,
+             @location(2) a_pos : vec3<f32>,
+             @location(3) a_norm: vec3<f32>) -> VSOutBoids {
+
+    let worldMatrix = getBoidWorldMatrix(a_particlePos, a_particleVel);
 
     var output: VSOutBoids;
     let wsPosition = worldMatrix * vec4<f32>(a_pos, 1.0);
     let wsNormal = worldMatrix * vec4<f32>(a_norm, 0.0); // this is ok since there is no scale
+
+    var shadowProjection = lightData.viewProjectionMatrix * wsPosition;
+    shadowProjection = shadowProjection / shadowProjection.w;
+
+    output.shadowMap = (shadowProjection.xyz + 1.0) / 2.0; 
 
     output.pos = cameraData.viewProjectionMatrix * wsPosition;
     output.wsPos = wsPosition;
@@ -226,13 +250,31 @@ fn mainVS(@location(0) a_particlePos : vec3<f32>,
     return output;
 }
 
+@stage(vertex)
+fn mainVSShadow(@location(0) a_particlePos : vec3<f32>,
+             @location(1) a_particleVel : vec3<f32>,
+             @location(2) a_pos : vec3<f32>,
+             @location(3) a_norm: vec3<f32>) -> @builtin(position) vec4<f32> {
+    
+    // y points towards velocity
+    let up = normalize(a_particleVel);
+    let right = normalize(cross(up, vec3<f32>(0.0, 0.0, 1.0)));
+    let forward = normalize(cross(right, up));
+
+    let worldMatrix = getBoidWorldMatrix(a_particlePos, a_particleVel);
+
+    let wsPosition = worldMatrix * vec4<f32>(a_pos, 1.0);
+
+    return lightData.viewProjectionMatrix * wsPosition;
+}
+
 @stage(fragment)
 fn mainFS(in: VSOutBoids) -> @location(0) vec4<f32> {
     var material: Material;
     material.color = in.col;
     material.shininess = 12.0;
     material.specularIntensity = 0.3;
-    return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, in.wsNormal.xyz);
+    return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, in.wsNormal.xyz, 1.0);
 }
 
 @stage(vertex)
@@ -285,6 +327,10 @@ struct BoxData {
 
     @location(1)
     wsNormal: vec3<f32>;
+
+    // xy texel position, z: depth from light
+    @location(3)
+    shadowMap: vec3<f32>;
 };
 
 @stage(vertex)
@@ -299,6 +345,9 @@ fn mainVSBox(@location(0) a_pos : vec3<f32>,
  
     var out: BoxData;
     out.wsPos = scale * vec4<f32>(a_pos, 1.0);
+    var shadowProjection = lightData.viewProjectionMatrix * out.wsPos;
+
+    out.shadowMap = vec3<f32>(shadowProjection.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5, 0.5), shadowProjection.z);
     out.position = cameraData.viewProjectionMatrix * out.wsPos;
     out.wsNormal = a_norm;
     return out;
@@ -319,8 +368,19 @@ fn mainFSBox(in: BoxData, @builtin(front_facing) frontFacing: bool) -> @location
     if (in.wsNormal.y > 0.5) {
         material.color = vec4<f32>(0.15, 0.15, 0.15, 1.0);
     }
+    var visibility: f32 = 1.0;
+    // sampele the shadow map only when possible
+    if (all(in.shadowMap.xy <= vec2<f32>(1.0, 1.0)) && all(in.shadowMap.xy >= vec2<f32>(0.0, 0.0))) {
+        let offset = 1.0 / vec2<f32>(textureDimensions(shadowMap));
+        visibility = textureSampleCompare(
+            shadowMap,
+            shadowSampler,
+            in.shadowMap.xy, in.shadowMap.z - 0.007
+        );
+    }
 
     material.shininess = 10.0;
     material.specularIntensity = 0.1;
-    return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, wsNormal);
+    //return vec4<f32>(visibility, visibility, visibility, 1.0);
+    return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, wsNormal, visibility);
 }

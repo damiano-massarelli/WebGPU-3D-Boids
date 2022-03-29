@@ -2,9 +2,32 @@ import { cone, cube } from "./3d-primitives";
 import { FreeControlledCamera } from "./camera";
 import shader from "./shaders.wgsl";
 import * as dat from "dat.gui";
-import { vec4 } from "gl-matrix";
+import { mat4, vec3, vec4 } from "gl-matrix";
+
+async function configureShadowMap(device: GPUDevice, shadowMapRes: number) {
+    const shadowDepthTexture = device.createTexture({
+        label: "shadow map texture",
+        format: "depth32float",
+        size: [shadowMapRes, shadowMapRes, 1],
+        usage:
+            GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
+    const shadowDepthTextureView = shadowDepthTexture.createView();
+    const sampler = device.createSampler({
+        label: "shadow map sampler",
+        compare: "less",
+    });
+
+    return {
+        shadowMapTextureView: shadowDepthTextureView,
+        shadowMapSampler: sampler,
+    };
+}
 
 async function configureCanvas(canvasId: string, useDevicePixelRatio: boolean) {
+    const shadowMapRes = 1024;
+
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
 
     const context = canvas.getContext("webgpu");
@@ -82,7 +105,45 @@ export async function run() {
             {
                 // Light
                 binding: 4,
-                visibility: GPUShaderStage.FRAGMENT,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                buffer: {
+                    type: "uniform",
+                },
+            },
+            {
+                // Shadow texture
+                binding: 5,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                texture: {
+                    sampleType: "depth",
+                },
+            },
+            {
+                // Shadow comparison sampler
+                binding: 6,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                sampler: {
+                    type: "comparison",
+                },
+            },
+        ],
+    });
+
+    const renderBindGroupShadowLayout = device.createBindGroupLayout({
+        label: "render bind group for shaow casting",
+        entries: [
+            {
+                // Simulation params
+                binding: 0,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                buffer: {
+                    type: "uniform",
+                },
+            },
+            {
+                // Light
+                binding: 4,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
                 buffer: {
                     type: "uniform",
                 },
@@ -90,8 +151,7 @@ export async function run() {
         ],
     });
 
-    // render pipeline
-    const renderPipeline = device.createRenderPipeline({
+    const boidsRenderPipelineDesc: GPURenderPipelineDescriptor = {
         label: "render pipeline",
         layout: device.createPipelineLayout({
             label: "boid render pipeline layout",
@@ -167,7 +227,46 @@ export async function run() {
             stencilReadMask: 0xff,
             stencilWriteMask: 0xff,
         },
+    };
+
+    // render pipeline
+    const renderPipeline = device.createRenderPipeline(boidsRenderPipelineDesc);
+
+    // render pipeline for outline
+    boidsRenderPipelineDesc.vertex.entryPoint = "mainVSOutline";
+    boidsRenderPipelineDesc.fragment!.entryPoint = "mainFSOutline";
+    boidsRenderPipelineDesc.depthStencil = {
+        format: "depth24plus-stencil8",
+        depthWriteEnabled: true,
+        depthCompare: "always",
+        stencilFront: {
+            compare: "not-equal",
+            depthFailOp: "keep",
+            failOp: "keep",
+            passOp: "keep",
+        },
+        stencilReadMask: 0xff,
+        stencilWriteMask: 0x00,
+    };
+    const renderPipelineOutline = device.createRenderPipeline(
+        boidsRenderPipelineDesc
+    );
+
+    // render pipeline for boids shadows
+    boidsRenderPipelineDesc.vertex.entryPoint = "mainVSShadow";
+    boidsRenderPipelineDesc.fragment = undefined;
+    boidsRenderPipelineDesc.label = "boids render pipeline shadow";
+    boidsRenderPipelineDesc.depthStencil = {
+        depthWriteEnabled: true,
+        depthCompare: "less",
+        format: "depth32float",
+    };
+    boidsRenderPipelineDesc.layout = device.createPipelineLayout({
+        bindGroupLayouts: [renderBindGroupShadowLayout],
     });
+    const renderPipelineShadow = device.createRenderPipeline(
+        boidsRenderPipelineDesc
+    );
 
     const boxPipelineDescr: GPURenderPipelineDescriptor = {
         label: "render pipeline box",
@@ -246,85 +345,6 @@ export async function run() {
     boxPipelineDescr.primitive!.cullMode = "back";
     const renderPipelineBoxFront =
         device.createRenderPipeline(boxPipelineDescr);
-
-    // render pipeline for outline
-    const renderPipelineOutline = device.createRenderPipeline({
-        label: "render pipeline outline",
-        layout: device.createPipelineLayout({
-            label: "outline pipeline layout",
-            bindGroupLayouts: [renderBindGroupLayout],
-        }),
-        vertex: {
-            module: shaderModule,
-            entryPoint: "mainVSOutline",
-            buffers: [
-                {
-                    arrayStride: 8 * Float32Array.BYTES_PER_ELEMENT, // 6 floats, xyz position and direction
-                    stepMode: "instance", // same index for all the vertices of a boid
-                    attributes: [
-                        {
-                            // instance position
-                            shaderLocation: 0,
-                            offset: 0,
-                            format: "float32x4",
-                        },
-                        {
-                            // instance velocity
-                            shaderLocation: 1,
-                            offset: 4 * Float32Array.BYTES_PER_ELEMENT,
-                            format: "float32x4",
-                        },
-                    ],
-                },
-                {
-                    // vertex positions
-                    arrayStride: 3 * Float32Array.BYTES_PER_ELEMENT, // xyz per vertex
-                    stepMode: "vertex",
-                    attributes: [
-                        {
-                            shaderLocation: 2,
-                            format: "float32x3",
-                            offset: 0,
-                        },
-                    ],
-                },
-                {
-                    // vertex normals
-                    arrayStride: 3 * Float32Array.BYTES_PER_ELEMENT, // xyz per vertex
-                    stepMode: "vertex",
-                    attributes: [
-                        {
-                            shaderLocation: 3,
-                            format: "float32x3",
-                            offset: 0,
-                        },
-                    ],
-                },
-            ],
-        },
-        fragment: {
-            module: shaderModule,
-            entryPoint: "mainFSOutline",
-            targets: [{ format: presentationFormat }],
-        },
-        primitive: {
-            topology: "triangle-list",
-            cullMode: "back",
-        },
-        depthStencil: {
-            format: "depth24plus-stencil8",
-            depthWriteEnabled: true,
-            depthCompare: "always",
-            stencilFront: {
-                compare: "not-equal",
-                depthFailOp: "keep",
-                failOp: "keep",
-                passOp: "keep",
-            },
-            stencilReadMask: 0xff,
-            stencilWriteMask: 0x00,
-        },
-    });
 
     // Compute pipeline
     const computePipeline = device.createComputePipeline({
@@ -453,11 +473,33 @@ export async function run() {
     updateSimParams();
 
     // Light data
-    const lightPosition = vec4.fromValues(-30, 40, -10, 0);
+    const lightPosition = vec4.fromValues(0, simParams.boxHeight, 0, 0);
     const lightDirection = vec4.create();
     vec4.negate(lightDirection, lightPosition);
     vec4.normalize(lightDirection, lightDirection);
+    const lightViewProj = mat4.create();
+    {
+        const viewMatrix = mat4.create();
+        mat4.lookAt(
+            viewMatrix,
+            lightPosition as vec3,
+            vec3.fromValues(0, 0, 0),
+            vec3.fromValues(0, 0, 1)
+        );
+        const lightProjectionMatrix = mat4.create();
+        mat4.orthoZO(
+            lightProjectionMatrix,
+            -simParams.boxWidth,
+            simParams.boxWidth,
+            -simParams.boxWidth,
+            simParams.boxWidth,
+            0,
+            2 * simParams.boxHeight
+        );
+        mat4.mul(lightViewProj, lightProjectionMatrix, viewMatrix);
+    }
     const lightData = {
+        viewProjection: lightViewProj,
         position: lightPosition,
         direction: lightDirection,
         color: vec4.fromValues(0.8, 0.8, 0.8, 1.0),
@@ -465,11 +507,12 @@ export async function run() {
     };
     const lightDataBuffer = device.createBuffer({
         label: "light data buffer",
-        size: 14 * 4,
+        size: (16 + 4 * 3 + 1) * Float32Array.BYTES_PER_ELEMENT, // 1 4x4 matrix + 3 vec4 + 1 float
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         mappedAtCreation: true,
     });
     new Float32Array(lightDataBuffer.getMappedRange()).set([
+        ...lightData.viewProjection,
         ...lightData.position,
         ...lightData.direction,
         ...lightData.color,
@@ -482,13 +525,13 @@ export async function run() {
     const initialParticleData = new Float32Array(NUM_PARTICLES * 8); // x, y, z, vx, vy, vz per particle + padding
     for (let i = 0; i < NUM_PARTICLES; ++i) {
         initialParticleData[8 * i + 0] =
-            simParams.boxWidth * (2 * Math.random() - 1); // x // TODO scale by max size
+            simParams.boxWidth * (2 * Math.random() - 1); // x
         initialParticleData[8 * i + 1] =
             simParams.boxHeight * (2 * Math.random() - 1); // y
         initialParticleData[8 * i + 2] =
             simParams.boxWidth * (2 * Math.random() - 1); // z
         initialParticleData[8 * i + 3] = 0; // padding
-        initialParticleData[8 * i + 4] = 2 * Math.random() - 1; // vx TODO scale by max speed
+        initialParticleData[8 * i + 4] = 2 * Math.random() - 1; // vx
         initialParticleData[8 * i + 5] = 2 * Math.random() - 1; // vy
         initialParticleData[8 * i + 6] = 2 * Math.random() - 1; // vz
         initialParticleData[8 * i + 7] = 0; // padding
@@ -517,8 +560,12 @@ export async function run() {
         mappedAtCreation: false,
     });
 
+    const { shadowMapTextureView, shadowMapSampler } = await configureShadowMap(
+        device,
+        1024
+    );
     const renderBindGroup = device.createBindGroup({
-        label: "render bind group box",
+        label: "render bind group",
         layout: renderBindGroupLayout,
         entries: [
             {
@@ -531,6 +578,33 @@ export async function run() {
                 binding: 3,
                 resource: {
                     buffer: cameraBuffer,
+                },
+            },
+            {
+                binding: 4,
+                resource: {
+                    buffer: lightDataBuffer,
+                },
+            },
+            {
+                binding: 5,
+                resource: shadowMapTextureView,
+            },
+            {
+                binding: 6,
+                resource: shadowMapSampler,
+            },
+        ],
+    });
+
+    const renderBindGroupShadow = device.createBindGroup({
+        label: "render bind group shadow",
+        layout: renderBindGroupShadowLayout,
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: simParamBuffer,
                 },
             },
             {
@@ -595,6 +669,27 @@ export async function run() {
             passEncoder.setPipeline(computePipeline);
             passEncoder.setBindGroup(0, particleBindGroups[t % 2]);
             passEncoder.dispatch(Math.ceil(NUM_PARTICLES / 64));
+            passEncoder.end();
+        }
+        {
+            // BOIDS shadow
+            const passEncoder = commandEncoder.beginRenderPass({
+                colorAttachments: [],
+                depthStencilAttachment: {
+                    view: shadowMapTextureView,
+                    depthClearValue: 1,
+                    depthLoadOp: "clear",
+                    depthStoreOp: "store",
+                },
+            });
+
+            passEncoder.setPipeline(renderPipelineShadow);
+            passEncoder.setVertexBuffer(0, particleBuffers[(t + 1) % 2]);
+            passEncoder.setVertexBuffer(1, conePB);
+            passEncoder.setVertexBuffer(2, coneNB);
+            passEncoder.setIndexBuffer(coneIB, "uint32");
+            passEncoder.setBindGroup(0, renderBindGroupShadow);
+            passEncoder.drawIndexed(coneIndices.length, NUM_PARTICLES);
             passEncoder.end();
         }
         {
