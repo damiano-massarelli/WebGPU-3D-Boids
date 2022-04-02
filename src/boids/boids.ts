@@ -17,6 +17,8 @@ async function configureShadowMap(device: GPUDevice, shadowMapRes: number) {
     const sampler = device.createSampler({
         label: "shadow map sampler",
         compare: "less",
+        magFilter: "linear",
+        minFilter: "linear",
     });
 
     return {
@@ -26,8 +28,6 @@ async function configureShadowMap(device: GPUDevice, shadowMapRes: number) {
 }
 
 async function configureCanvas(canvasId: string, useDevicePixelRatio: boolean) {
-    const shadowMapRes = 1024;
-
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
 
     const context = canvas.getContext("webgpu");
@@ -431,7 +431,7 @@ export async function run() {
 
     // simulation parameters
     const simParams = {
-        deltaT: 0.07,
+        deltaT: 0.08,
         rule1Distance: 2.2,
         rule2Distance: 1.2,
         rule3Distance: 1,
@@ -473,7 +473,12 @@ export async function run() {
     updateSimParams();
 
     // Light data
-    const lightPosition = vec4.fromValues(0, simParams.boxHeight, 0, 0);
+    const lightPosition = vec4.fromValues(
+        simParams.boxWidth / 2,
+        simParams.boxHeight * 1.5,
+        simParams.boxWidth / 1.5,
+        0
+    );
     const lightDirection = vec4.create();
     vec4.negate(lightDirection, lightPosition);
     vec4.normalize(lightDirection, lightDirection);
@@ -484,17 +489,17 @@ export async function run() {
             viewMatrix,
             lightPosition as vec3,
             vec3.fromValues(0, 0, 0),
-            vec3.fromValues(0, 0, 1)
+            vec3.fromValues(0, 1, 0)
         );
         const lightProjectionMatrix = mat4.create();
         mat4.orthoZO(
             lightProjectionMatrix,
-            -simParams.boxWidth,
-            simParams.boxWidth,
-            -simParams.boxWidth,
-            simParams.boxWidth,
+            -1.5 * simParams.boxWidth,
+            1.5 * simParams.boxWidth,
+            -1.5 * simParams.boxWidth,
+            1.5 * simParams.boxWidth,
             0,
-            2 * simParams.boxHeight
+            5 * simParams.boxHeight
         );
         mat4.mul(lightViewProj, lightProjectionMatrix, viewMatrix);
     }
@@ -521,7 +526,7 @@ export async function run() {
     lightDataBuffer.unmap();
 
     // setup ping-pong buffers for boids position and velocity
-    const NUM_PARTICLES = 650;
+    const NUM_PARTICLES = 550;
     const initialParticleData = new Float32Array(NUM_PARTICLES * 8); // x, y, z, vx, vy, vz per particle + padding
     for (let i = 0; i < NUM_PARTICLES; ++i) {
         initialParticleData[8 * i + 0] =

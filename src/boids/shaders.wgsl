@@ -1,55 +1,56 @@
 struct Particle {
-    pos: vec4<f32>;
-    vel: vec4<f32>;
+    pos: vec4<f32>,
+    vel: vec4<f32>,
 };
 
 struct SimParams {
-    deltaT: f32;
-    rule1Distance: f32;
-    rule2Distance: f32;
-    rule3Distance: f32;
-    rule1Scale: f32;
-    rule2Scale: f32;
-    rule3Scale: f32;
-    boxWidth: f32;
-    boxHeight: f32;
+    deltaT: f32,
+    rule1Distance: f32,
+    rule2Distance: f32,
+    rule3Distance: f32,
+    rule1Scale: f32,
+    rule2Scale: f32,
+    rule3Scale: f32,
+    boxWidth: f32,
+    boxHeight: f32,
 };
 
 struct Particles {
-    particles: array<Particle>;
+    particles: array<Particle>,
 };
 
 struct CameraData {
-    viewProjectionMatrix: mat4x4<f32>; // 0
-    position: vec3<f32>;               // 64
+    viewProjectionMatrix: mat4x4<f32>, // 0
+    position: vec3<f32>,               // 64
 };
 
 struct LightData {
-    viewProjectionMatrix: mat4x4<f32>; // 0
-    position: vec4<f32>;               // 64
-    direction: vec4<f32>;              // 80
-    color: vec4<f32>;                  // 96
-    ambientIntensity: f32;             // 112
+    viewProjectionMatrix: mat4x4<f32>, // 0
+    position: vec4<f32>,               // 64
+    direction: vec4<f32>,              // 80
+    color: vec4<f32>,                  // 96
+    ambientIntensity: f32,             // 112
 };
 
 struct Material {
-    color: vec4<f32>;        // 0
-    shininess: f32;          // 16
-    specularIntensity: f32;  // 20
+    color: vec4<f32>,        // 0
+    shininess: f32,          // 16
+    specularIntensity: f32,  // 20
 };
 
-fn computeLight(light: LightData, material: Material, cameraPosition: vec3<f32>, position: vec3<f32>, normal: vec3<f32>, visibility: f32) -> vec4<f32> {
+fn computeLight(light: LightData, material: Material, cameraPosition: vec3<f32>, position: vec3<f32>, normal: vec3<f32>, visibility: f32, shadowAttenuation: f32) -> vec4<f32> {
+    let shadow = mix(shadowAttenuation, 1.0, visibility);
     let N: vec3<f32> = normalize(normal.xyz);
     let L: vec3<f32> = normalize(-light.direction.xyz);
     let V: vec3<f32> = normalize(cameraPosition.xyz - position.xyz);
     let H: vec3<f32> = normalize(L + V);
     let NdotL = max(dot(N, L), 0.0);
-    let kD: f32 = visibility * NdotL + light.ambientIntensity;
+    let kD: f32 = shadow * NdotL + light.ambientIntensity;
     var kSEnabled = 0.0;
     if (NdotL > 0.0) {
         kSEnabled = 1.0;
     }
-    let kS: f32 = visibility * kSEnabled * material.specularIntensity * pow(max(dot(N, H), 0.0), material.shininess);
+    let kS: f32 = shadow * kSEnabled * material.specularIntensity * pow(max(dot(N, H), 0.0), material.shininess);
     let finalColor = material.color.rgb * light.color.rgb * kD + light.color.rgb * kS;
     return vec4<f32>(finalColor, material.color.a);
 };
@@ -84,8 +85,8 @@ var shadowSampler: sampler_comparison;
 
 @stage(compute)
 @workgroup_size(64)
-fn mainCS(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
-    let index: u32 = GlobalInvocationID.x;
+fn mainCS(@builtin(global_invocation_id) globalInvocationID: vec3<u32>) {
+    let index: u32 = globalInvocationID.x;
 
     if (index >= arrayLength(&particlesA.particles)) {
         return;
@@ -130,9 +131,11 @@ fn mainCS(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
 
         // rule2: separation, steer to avoid crowding local flockmates
         if (distance(pos, vPos) < params.rule2Distance) {
+            // additional push intensity to avoid compenetration
+            let additionalIntensity = mix(5.0, 1.0, distance(pos, vPos) / params.rule2Distance);
             // push away this boid based on the position 
             // of the neighbours.
-            colVel = colVel + (vPos - pos);
+            colVel = colVel + additionalIntensity * (vPos - pos);
         }
 
         // rule3: alignment, steer towards the average heading of local flockmates
@@ -169,7 +172,7 @@ fn mainCS(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
         if (dist < maxDist) {
             var intensity = 1.0 - (dist - minDist) / (maxDist - minDist);
             intensity = clamp(intensity, 0.0, 1.0);
-            var directionIntensity = 0.075;
+            var directionIntensity = 0.1;
             if (dot(vVel, n) > 0.0) { // reduce repulsion intensity if the boid is going in the direction of the plane normal
                 directionIntensity = directionIntensity / 2.5;
             }
@@ -194,20 +197,20 @@ fn mainCS(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
 
 struct VSOutBoids {
     @builtin(position)
-    pos: vec4<f32>;
+    pos: vec4<f32>,
 
     @location(0)
-    wsPos: vec4<f32>;
+    wsPos: vec4<f32>,
 
     @location(1)
-    wsNormal: vec4<f32>;
+    wsNormal: vec4<f32>,
 
     @location(2)
-    col: vec4<f32>;
+    col: vec4<f32>,
 
     // xy texel position, z: depth from light
     @location(3)
-    shadowMap: vec3<f32>;
+    shadowMapCoords: vec3<f32>,
 };
 
 fn getBoidWorldMatrix(position: vec3<f32>, velocity: vec3<f32>) -> mat4x4<f32> {
@@ -226,6 +229,29 @@ fn getBoidWorldMatrix(position: vec3<f32>, velocity: vec3<f32>) -> mat4x4<f32> {
     return worldMatrix;
 }
 
+fn getVisibility(shadowMapCoords: vec3<f32>) -> f32 {
+    let pcfResolution = 2;
+
+    var visibility: f32 = 0.0;
+    // sampele the shadow map only when possible
+    if (all(shadowMapCoords.xy <= vec2<f32>(1.0, 1.0)) && all(shadowMapCoords.xy >= vec2<f32>(0.0, 0.0))) {
+        let offset = 1.0 / vec2<f32>(textureDimensions(shadowMap));
+        for (var i = -pcfResolution; i <= pcfResolution; i = i + 1) {
+            for (var j = -pcfResolution; j <= pcfResolution; j = j + 1) {
+                visibility = visibility + textureSampleCompare(
+                    shadowMap,
+                    shadowSampler,
+                    shadowMapCoords.xy + vec2<f32>(f32(i), f32(j)) * offset, shadowMapCoords.z - 0.007
+                );
+            }
+        }
+    }
+
+    visibility = visibility / f32((pcfResolution + pcfResolution + 1) * (pcfResolution + pcfResolution + 1));
+
+    return visibility;
+}
+
 @stage(vertex)
 fn mainVS(@location(0) a_particlePos : vec3<f32>,
              @location(1) a_particleVel : vec3<f32>,
@@ -241,7 +267,7 @@ fn mainVS(@location(0) a_particlePos : vec3<f32>,
     var shadowProjection = lightData.viewProjectionMatrix * wsPosition;
     shadowProjection = shadowProjection / shadowProjection.w;
 
-    output.shadowMap = (shadowProjection.xyz + 1.0) / 2.0; 
+    output.shadowMapCoords = vec3<f32>(shadowProjection.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5, 0.5), shadowProjection.z);
 
     output.pos = cameraData.viewProjectionMatrix * wsPosition;
     output.wsPos = wsPosition;
@@ -274,7 +300,7 @@ fn mainFS(in: VSOutBoids) -> @location(0) vec4<f32> {
     material.color = in.col;
     material.shininess = 12.0;
     material.specularIntensity = 0.3;
-    return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, in.wsNormal.xyz, 1.0);
+    return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, in.wsNormal.xyz, getVisibility(in.shadowMapCoords), 0.0);
 }
 
 @stage(vertex)
@@ -320,17 +346,17 @@ fn mainFSOutline() -> @location(0) vec4<f32> {
 
 struct BoxData {
     @builtin(position)
-    position: vec4<f32>;
+    position: vec4<f32>,
 
     @location(0)
-    wsPos: vec4<f32>;
+    wsPos: vec4<f32>,
 
     @location(1)
-    wsNormal: vec3<f32>;
+    wsNormal: vec3<f32>,
 
     // xy texel position, z: depth from light
     @location(3)
-    shadowMap: vec3<f32>;
+    shadowMapCoords: vec3<f32>,
 };
 
 @stage(vertex)
@@ -347,7 +373,7 @@ fn mainVSBox(@location(0) a_pos : vec3<f32>,
     out.wsPos = scale * vec4<f32>(a_pos, 1.0);
     var shadowProjection = lightData.viewProjectionMatrix * out.wsPos;
 
-    out.shadowMap = vec3<f32>(shadowProjection.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5, 0.5), shadowProjection.z);
+    out.shadowMapCoords = vec3<f32>(shadowProjection.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5, 0.5), shadowProjection.z);
     out.position = cameraData.viewProjectionMatrix * out.wsPos;
     out.wsNormal = a_norm;
     return out;
@@ -356,7 +382,7 @@ fn mainVSBox(@location(0) a_pos : vec3<f32>,
 @stage(fragment)
 fn mainFSBox(in: BoxData, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4<f32> {
     var material: Material;
-    material.color = vec4<f32>(.8, .8, .8, 0.1);
+    material.color = vec4<f32>(.8, .8, .8, 0.15);
     var wsNormal = in.wsNormal;
 
     // make sure the normal always points towards the light source
@@ -368,19 +394,9 @@ fn mainFSBox(in: BoxData, @builtin(front_facing) frontFacing: bool) -> @location
     if (in.wsNormal.y > 0.5) {
         material.color = vec4<f32>(0.15, 0.15, 0.15, 1.0);
     }
-    var visibility: f32 = 1.0;
-    // sampele the shadow map only when possible
-    if (all(in.shadowMap.xy <= vec2<f32>(1.0, 1.0)) && all(in.shadowMap.xy >= vec2<f32>(0.0, 0.0))) {
-        let offset = 1.0 / vec2<f32>(textureDimensions(shadowMap));
-        visibility = textureSampleCompare(
-            shadowMap,
-            shadowSampler,
-            in.shadowMap.xy, in.shadowMap.z - 0.007
-        );
-    }
 
     material.shininess = 10.0;
     material.specularIntensity = 0.1;
     //return vec4<f32>(visibility, visibility, visibility, 1.0);
-    return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, wsNormal, visibility);
+    return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, wsNormal, getVisibility(in.shadowMapCoords), 0.5);
 }
