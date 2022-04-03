@@ -189,6 +189,7 @@ fn mainCS(@builtin(global_invocation_id) globalInvocationID: vec3<u32>) {
 
     // move the particle
     vPos = vPos + (vVel * params.deltaT);
+    vPos = clamp(vPos, vec3<f32>(-params.boxWidth, -params.boxHeight, -params.boxWidth), vec3<f32>(params.boxWidth, params.boxHeight, params.boxWidth));
 
     // write new calculated data
     particlesB.particles[index].pos = vec4<f32>(vPos, 0.0);
@@ -382,7 +383,7 @@ fn mainVSBox(@location(0) a_pos : vec3<f32>,
 @stage(fragment)
 fn mainFSBox(in: BoxData, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4<f32> {
     var material: Material;
-    material.color = vec4<f32>(.8, .8, .8, 0.15);
+    material.color = vec4<f32>(.8, .8, .8, 0.1);
     var wsNormal = in.wsNormal;
 
     // make sure the normal always points towards the light source
@@ -397,6 +398,5 @@ fn mainFSBox(in: BoxData, @builtin(front_facing) frontFacing: bool) -> @location
 
     material.shininess = 10.0;
     material.specularIntensity = 0.1;
-    //return vec4<f32>(visibility, visibility, visibility, 1.0);
     return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, wsNormal, getVisibility(in.shadowMapCoords), 0.5);
 }

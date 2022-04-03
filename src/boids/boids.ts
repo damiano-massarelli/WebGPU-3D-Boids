@@ -1,5 +1,5 @@
 import { cone, cube } from "./3d-primitives";
-import { FreeControlledCamera } from "./camera";
+import { FreeControlledCamera, TurnTableCamera } from "./camera";
 import shader from "./shaders.wgsl";
 import * as dat from "dat.gui";
 import { mat4, vec3, vec4 } from "gl-matrix";
@@ -438,12 +438,71 @@ export async function run() {
         rule1Scale: 0.02,
         rule2Scale: 0.02,
         rule3Scale: 0.075,
-        boxWidth: 20,
+        boxWidth: 18,
         boxHeight: 12,
         showOutline: false,
+        freeCamera: false,
+
+        meta: {
+            deltaT: {
+                min: 0,
+                max: 0.15,
+            },
+            rule1Distance: {
+                min: 0,
+                max: 3,
+            },
+            rule2Distance: {
+                min: 0,
+                max: 3,
+            },
+            rule3Distance: {
+                min: 0,
+                max: 3,
+            },
+            rule1Scale: {
+                min: 0,
+                max: 1,
+            },
+            rule2Scale: {
+                min: 0,
+                max: 1,
+            },
+            rule3Scale: { val: 0.075, min: 0, max: 1 },
+            boxWidth: {
+                max: 20,
+                min: 4,
+            },
+            boxHeight: {
+                max: 14,
+                min: 4,
+            },
+            freeCamera: {
+                toolTip:
+                    "Once selected click on the viewport to control the camera with WASD + mouse. Esc to exit",
+            },
+        } as {
+            [key: string]:
+                | { min?: number; max?: number; toolTip?: string }
+                | undefined;
+        },
     };
     Object.keys(simParams).forEach((k) => {
-        gui.add(simParams, k).onFinishChange(updateSimParams);
+        if (k !== "meta") {
+            const controller = gui.add(
+                simParams,
+                k,
+                simParams.meta[k]?.min,
+                simParams.meta[k]?.max
+            );
+            controller.onChange(updateSimParams);
+
+            // very cheap way of creating tooltips
+            controller.domElement.parentElement!.setAttribute(
+                "title",
+                simParams.meta[k]?.toolTip ?? ""
+            );
+        }
     });
 
     const simParamBufferSize = 9 * Float32Array.BYTES_PER_ELEMENT;
@@ -494,10 +553,10 @@ export async function run() {
         const lightProjectionMatrix = mat4.create();
         mat4.orthoZO(
             lightProjectionMatrix,
-            -1.5 * simParams.boxWidth,
-            1.5 * simParams.boxWidth,
-            -1.5 * simParams.boxWidth,
-            1.5 * simParams.boxWidth,
+            -1.75 * simParams.boxWidth,
+            1.75 * simParams.boxWidth,
+            -1.75 * simParams.boxWidth,
+            1.75 * simParams.boxWidth,
             0,
             5 * simParams.boxHeight
         );
@@ -648,13 +707,39 @@ export async function run() {
         });
     }
 
-    const camera = new FreeControlledCamera(
+    const freeCamera = new FreeControlledCamera(
         canvas,
         (2 * Math.PI) / 5,
         canvas.clientWidth / canvas.clientHeight
     );
+
+    const turnCamera = new TurnTableCamera(
+        (2 * Math.PI) / 5,
+        canvas.clientWidth / canvas.clientHeight
+    );
+    turnCamera.rotationPivot = vec3.fromValues(
+        0,
+        simParams.boxHeight * 1.25,
+        0
+    );
+    turnCamera.rotatationRadius =
+        Math.max(simParams.boxWidth, simParams.boxHeight) * 2;
+    turnCamera.lookAt = vec3.fromValues(0, -simParams.boxHeight / 1.5, 0);
+    turnCamera.rotationSpeed = 0.005;
+
+    let camera: TurnTableCamera | FreeControlledCamera = freeCamera;
+
     let t = 0;
     function frame() {
+        if (simParams.freeCamera) {
+            if (camera !== freeCamera) {
+                freeCamera.copyTransform(turnCamera);
+            }
+            camera = freeCamera;
+        } else {
+            camera = turnCamera;
+        }
+
         // update camera uniforms
         device.queue.writeBuffer(
             cameraBuffer,

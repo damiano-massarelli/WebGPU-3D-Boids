@@ -29,6 +29,11 @@ export class Camera {
         quat.fromEuler(this.rotationQuat, ...rotationDeg);
     }
 
+    copyTransform(other: Camera) {
+        this.rotation = other.rotation;
+        this.position = vec3.clone(other.position);
+    }
+
     getUpRightMatrix(): mat3 {
         const result = mat3.create();
         mat3.fromQuat(result, this.rotationQuat);
@@ -129,6 +134,58 @@ export class FreeControlledCamera extends Camera {
         vec3.scale(right, right, this.state.right);
         vec3.add(right, right, forward);
         vec3.add(this.position, this.position, right);
+
+        return this.getViewMatrix();
+    }
+
+    updateAndGetViewProjectionMatrix(): mat4 {
+        this.updateAndGetViewMatrix();
+        return this.getViewProjectionMatrix();
+    }
+}
+
+export class TurnTableCamera extends Camera {
+    rotationPivot = vec3.fromValues(0, 10, 0);
+    rotationSpeed = 0.01;
+    rotatationRadius = 30;
+    lookAt = vec3.fromValues(0, 0, 0);
+
+    private angleRad = 0;
+
+    constructor(
+        fovY: number,
+        aspectRatio: number,
+        near: number = 0.1,
+        far: number = 1000
+    ) {
+        super(fovY, aspectRatio, near, far);
+    }
+
+    updateAndGetViewMatrix(): mat4 {
+        this.angleRad += this.rotationSpeed;
+        this.position[0] = this.rotatationRadius * Math.sin(this.angleRad);
+        this.position[2] = this.rotatationRadius * Math.cos(this.angleRad);
+        this.position[1] = this.rotationPivot[1];
+
+        const currentRoation = this.rotation;
+        currentRoation[1] = (180 * this.angleRad) / Math.PI;
+
+        const direction = vec3.create();
+        vec3.sub(direction, this.lookAt, this.position);
+        vec3.normalize(direction, direction);
+
+        const up = vec3.fromValues(0, 1, 0);
+        const right = vec3.create();
+        vec3.cross(right, direction, up);
+
+        const slope = vec3.create();
+        vec3.cross(slope, right, direction);
+        vec3.normalize(slope, slope);
+
+        const angle = -Math.acos(vec3.dot(slope, up));
+        currentRoation[0] = (180 * angle) / Math.PI;
+
+        this.rotation = currentRoation;
 
         return this.getViewMatrix();
     }
