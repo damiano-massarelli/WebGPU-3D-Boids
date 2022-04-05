@@ -132,7 +132,7 @@ fn mainCS(@builtin(global_invocation_id) globalInvocationID: vec3<u32>) {
         // rule2: separation, steer to avoid crowding local flockmates
         if (distance(pos, vPos) < params.rule2Distance) {
             // additional push intensity to avoid compenetration
-            let additionalIntensity = mix(5.0, 1.0, distance(pos, vPos) / params.rule2Distance);
+            let additionalIntensity = mix(4.0, 1.0, distance(pos, vPos) / params.rule2Distance);
             // push away this boid based on the position 
             // of the neighbours.
             colVel = colVel + additionalIntensity * (vPos - pos);
@@ -159,6 +159,10 @@ fn mainCS(@builtin(global_invocation_id) globalInvocationID: vec3<u32>) {
     vVel = vVel + (cMass * params.rule1Scale) + (colVel * params.rule2Scale) +
         (cVel * params.rule3Scale);
     
+    // fishy "random"
+    //let offset = 0.1 * vec3<f32>(cos(vPos.x * 5.0 + f32(index) / 10.), sin(vPos.y * 5.0 + f32(index) / 10.), cos(vPos.z * 5.0 + f32(index) / 10.));
+    //vVel = vVel + offset * 0.1;
+    
     var d = normalize(vVel);
 
     for (var j: u32 = 0u; j < 6u; j = j + 1u) {
@@ -171,14 +175,19 @@ fn mainCS(@builtin(global_invocation_id) globalInvocationID: vec3<u32>) {
 
         if (dist < maxDist) {
             var intensity = 1.0 - (dist - minDist) / (maxDist - minDist);
-            intensity = clamp(intensity, 0.0, 1.0);
+            intensity = pow(clamp(intensity, 0.0, 1.0), 0.5);
             var directionIntensity = 0.1;
             if (dot(vVel, n) > 0.0) { // reduce repulsion intensity if the boid is going in the direction of the plane normal
                 directionIntensity = directionIntensity / 2.5;
             }
-            d = normalize(d + directionIntensity * intensity * n);
+            if (dist < minDist) {
+                // boids are too close to the plane, increase repulsion intensity
+                directionIntensity = directionIntensity * 10.0 * (minDist - dist) / minDist;
+            }
 
-            if (dist < minDist / 2.0) {
+            d = normalize(d + directionIntensity * intensity * n);
+            
+            if (dist <= 0.1) {
                 d = n; // make sure boids do not go outside the box
             }
         }

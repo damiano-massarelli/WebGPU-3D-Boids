@@ -431,47 +431,51 @@ export async function run() {
 
     // simulation parameters
     const simParams = {
-        deltaT: 0.08,
-        rule1Distance: 2.2,
-        rule2Distance: 1.2,
-        rule3Distance: 1,
-        rule1Scale: 0.02,
-        rule2Scale: 0.02,
-        rule3Scale: 0.075,
-        boxWidth: 18,
+        deltaT: 0.07,
+        cohesionDistance: 2,
+        separationDistance: 1.2,
+        alignmentDistance: 1.15,
+        cohesionScale: 0.02,
+        separationScale: 0.02,
+        alignmentScale: 0.07,
+        boxWidth: 20,
         boxHeight: 12,
         showOutline: false,
         freeCamera: false,
+        cameraRadius: 40,
 
         meta: {
             deltaT: {
                 min: 0,
                 max: 0.15,
             },
-            rule1Distance: {
+            cohesionDistance: {
                 min: 0,
                 max: 3,
             },
-            rule2Distance: {
+            separationDistance: {
                 min: 0,
                 max: 3,
             },
-            rule3Distance: {
+            alignmentDistance: {
                 min: 0,
                 max: 3,
             },
-            rule1Scale: {
+            cohesionScale: {
                 min: 0,
                 max: 1,
             },
-            rule2Scale: {
+            separationScale: {
                 min: 0,
                 max: 1,
             },
-            rule3Scale: { val: 0.075, min: 0, max: 1 },
+            alignmentScale: {
+                min: 0,
+                max: 1,
+            },
             boxWidth: {
                 max: 20,
-                min: 4,
+                min: 8,
             },
             boxHeight: {
                 max: 14,
@@ -480,6 +484,10 @@ export async function run() {
             freeCamera: {
                 toolTip:
                     "Once selected click on the viewport to control the camera with WASD + mouse. Esc to exit",
+            },
+            cameraRadius: {
+                min: 6,
+                max: 40,
             },
         } as {
             [key: string]:
@@ -518,12 +526,12 @@ export async function run() {
             0,
             new Float32Array([
                 simParams.deltaT,
-                simParams.rule1Distance,
-                simParams.rule2Distance,
-                simParams.rule3Distance,
-                simParams.rule1Scale,
-                simParams.rule2Scale,
-                simParams.rule3Scale,
+                simParams.cohesionDistance,
+                simParams.separationDistance,
+                simParams.alignmentDistance,
+                simParams.cohesionScale,
+                simParams.separationScale,
+                simParams.alignmentScale,
                 simParams.boxWidth,
                 simParams.boxHeight,
             ])
@@ -724,13 +732,15 @@ export async function run() {
     );
     turnCamera.rotatationRadius =
         Math.max(simParams.boxWidth, simParams.boxHeight) * 2;
-    turnCamera.lookAt = vec3.fromValues(0, -simParams.boxHeight / 1.5, 0);
+
     turnCamera.rotationSpeed = 0.005;
 
     let camera: TurnTableCamera | FreeControlledCamera = freeCamera;
 
     let t = 0;
     function frame() {
+        turnCamera.rotatationRadius = simParams.cameraRadius;
+        turnCamera.lookAt = vec3.fromValues(0, -simParams.boxHeight / 1.5, 0);
         if (simParams.freeCamera) {
             if (camera !== freeCamera) {
                 freeCamera.copyTransform(turnCamera);
