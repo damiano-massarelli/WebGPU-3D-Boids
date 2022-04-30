@@ -83,6 +83,27 @@ export async function run() {
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
+    // Background pipeline
+    const backgroundPipeline = device.createRenderPipeline({
+        label: "background pipeline",
+        vertex: {
+            module: shaderModule,
+            entryPoint: "mainVSBackground",
+        },
+        fragment: {
+            module: shaderModule,
+            entryPoint: "mainFSBackground",
+            targets: [
+                {
+                    format: presentationFormat, // output format of the output, that of the swapchain here
+                },
+            ],
+        },
+        primitive: {
+            topology: "triangle-strip",
+        },
+    });
+
     const renderBindGroupLayout = device.createBindGroupLayout({
         label: "render bind group layout",
         entries: [
@@ -627,7 +648,7 @@ export async function run() {
 
     const cameraBuffer = device.createBuffer({
         label: "cameraBuffer",
-        size: (16 + 3) * Float32Array.BYTES_PER_ELEMENT,
+        size: (16 + 4 + 3 + 1) * Float32Array.BYTES_PER_ELEMENT,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         mappedAtCreation: false,
     });
@@ -683,6 +704,19 @@ export async function run() {
                 binding: 4,
                 resource: {
                     buffer: lightDataBuffer,
+                },
+            },
+        ],
+    });
+
+    const renderBindGroupBackground = device.createBindGroup({
+        label: "render bind ground bg",
+        layout: backgroundPipeline.getBindGroupLayout(0),
+        entries: [
+            {
+                binding: 3,
+                resource: {
+                    buffer: cameraBuffer,
                 },
             },
         ],
@@ -754,12 +788,13 @@ export async function run() {
         device.queue.writeBuffer(
             cameraBuffer,
             0,
-            camera.updateAndGetViewProjectionMatrix()
-        );
-        device.queue.writeBuffer(
-            cameraBuffer,
-            16 * Float32Array.BYTES_PER_ELEMENT,
-            new Float32Array(camera.position)
+            new Float32Array([
+                ...camera.updateAndGetViewProjectionMatrix(),
+                ...camera.position,
+                0, // padding
+                ...camera.rotation,
+                camera.fovY,
+            ])
         );
 
         const commandEncoder = device.createCommandEncoder();
@@ -793,12 +828,29 @@ export async function run() {
             passEncoder.end();
         }
         {
-            // BOIDS
+            // BACKGROUND
             const passEncoder = commandEncoder.beginRenderPass({
                 colorAttachments: [
                     {
                         loadOp: "clear",
-                        clearValue: [0.08, 0.1, 0.54, 1],
+                        clearValue: [0, 0, 0, 1],
+                        storeOp: "store",
+                        view: context!.getCurrentTexture().createView(),
+                    },
+                ],
+            });
+            passEncoder.setPipeline(backgroundPipeline);
+            passEncoder.setBindGroup(0, renderBindGroupBackground);
+            passEncoder.draw(4);
+            passEncoder.end();
+        }
+        {
+            // BOIDS
+            const passEncoder = commandEncoder.beginRenderPass({
+                colorAttachments: [
+                    {
+                        loadOp: "load",
+                        //clearValue: [0.08, 0.1, 0.54, 1],
                         storeOp: "store",
                         view: context!.getCurrentTexture().createView(),
                     },

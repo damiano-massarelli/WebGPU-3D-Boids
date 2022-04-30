@@ -5,6 +5,7 @@ export class Camera {
     private rotationQuat: quat;
     private projectionMatrix: mat4;
 
+    readonly fovY: number;
     position: vec3;
 
     constructor(
@@ -17,7 +18,8 @@ export class Camera {
         this.rotationDeg = [0, 0, 0];
         this.rotationQuat = quat.create();
         this.projectionMatrix = mat4.create();
-        mat4.perspective(this.projectionMatrix, fovY, aspectRatio, near, far);
+        this.fovY = fovY;
+        mat4.perspectiveZO(this.projectionMatrix, fovY, aspectRatio, near, far);
     }
 
     get rotation() {

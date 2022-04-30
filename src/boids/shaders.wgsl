@@ -21,7 +21,9 @@ struct Particles {
 
 struct CameraData {
     viewProjectionMatrix: mat4x4<f32>, // 0
-    position: vec3<f32>,               // 64
+    position: vec4<f32>,               // 64
+    rotation: vec3<f32>,               // 80
+    fovYRad: f32,                      // 92
 };
 
 struct LightData {
@@ -310,7 +312,7 @@ fn mainFS(in: VSOutBoids) -> @location(0) vec4<f32> {
     material.color = in.col;
     material.shininess = 12.0;
     material.specularIntensity = 0.3;
-    return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, in.wsNormal.xyz, getVisibility(in.shadowMapCoords), 0.0);
+    return computeLight(lightData, material, cameraData.position.xyz, in.wsPos.xyz, in.wsNormal.xyz, getVisibility(in.shadowMapCoords), 0.0);
 }
 
 @stage(vertex)
@@ -407,5 +409,35 @@ fn mainFSBox(in: BoxData, @builtin(front_facing) frontFacing: bool) -> @location
 
     material.shininess = 10.0;
     material.specularIntensity = 0.1;
-    return computeLight(lightData, material, cameraData.position, in.wsPos.xyz, wsNormal, getVisibility(in.shadowMapCoords), 0.5);
+    return computeLight(lightData, material, cameraData.position.xyz, in.wsPos.xyz, wsNormal, getVisibility(in.shadowMapCoords), 0.5);
+}
+
+struct BackgroundData {
+    @builtin(position)
+    position: vec4<f32>,
+
+    @location(0)
+    color: vec4<f32>,
+};
+
+@stage(vertex)
+fn mainVSBackground(@builtin(vertex_index) vertexIndex: u32) -> BackgroundData {
+    var screenQuad = array<vec2<f32>, 4>(
+            vec2<f32>(-1.0, -1.0),
+            vec2<f32>(1.0, -1.0),
+            vec2<f32>(-1.0, 1.0),
+            vec2<f32>(1.0, 1.0));
+
+    var out: BackgroundData;
+    out.position = vec4<f32>(screenQuad[vertexIndex], 0.0, 1.0);
+
+    let fovYDeg = cameraData.fovYRad * 180.0 / 3.14; 
+    let orbitPitchBlend = sin((cameraData.rotation.x + (out.position.y * fovYDeg/2.0)) * 3.14 / 180.0) * 0.5 + 0.5;
+    out.color = mix(vec4<f32>(0.08, 0.1, 0.54, 1.0), vec4<f32>(0.16, 0.24, 0.74, 1.0), orbitPitchBlend);
+    return out;
+}
+
+@stage(fragment)
+fn mainFSBackground(in: BackgroundData) -> @location(0) vec4<f32> {
+    return in.color;
 }
