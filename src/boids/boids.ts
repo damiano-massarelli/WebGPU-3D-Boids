@@ -4,6 +4,8 @@ import shader from "./shaders.wgsl";
 import * as dat from "dat.gui";
 import { mat4, vec3, vec4 } from "gl-matrix";
 
+const USE_DEVICE_PIXEL_RATIO = true;
+
 async function configureShadowMap(device: GPUDevice, shadowMapRes: number) {
     const shadowDepthTexture = device.createTexture({
         label: "shadow map texture",
@@ -46,9 +48,8 @@ async function configureCanvas(canvasId: string, useDevicePixelRatio: boolean) {
     canvas.width = presentationSize[0];
     canvas.height = presentationSize[1];
 
-    const presentationFormat: GPUTextureFormat = context!.getPreferredFormat(
-        adapter!
-    );
+    const presentationFormat: GPUTextureFormat =
+        navigator.gpu.getPreferredCanvasFormat();
     console.log(presentationFormat);
     context?.configure({
         device,
@@ -68,7 +69,7 @@ export async function run() {
     }
 
     const { device, canvas, context, presentationSize, presentationFormat } =
-        await configureCanvas("canvas-wegbpu", false);
+        await configureCanvas("canvas-wegbpu", USE_DEVICE_PIXEL_RATIO);
 
     // compute and render shader module
     const shaderModule = device.createShaderModule({
@@ -77,7 +78,7 @@ export async function run() {
     });
 
     // create depth texture
-    const depthTexture = device.createTexture({
+    let depthTexture = device.createTexture({
         size: presentationSize,
         format: "depth24plus-stencil8",
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
@@ -85,6 +86,7 @@ export async function run() {
 
     // Background pipeline
     const backgroundPipeline = device.createRenderPipeline({
+        layout: "auto",
         label: "background pipeline",
         vertex: {
             module: shaderModule,
@@ -369,6 +371,7 @@ export async function run() {
 
     // Compute pipeline
     const computePipeline = device.createComputePipeline({
+        layout: "auto",
         label: "compute pipeline",
         compute: {
             module: shaderModule,
@@ -463,7 +466,6 @@ export async function run() {
         boxHeight: 12,
         showOutline: false,
         freeCamera: false,
-        cameraRadius: 40,
 
         meta: {
             deltaT: {
@@ -505,10 +507,6 @@ export async function run() {
             freeCamera: {
                 toolTip:
                     "Once selected click on the viewport to control the camera with WASD + mouse. Esc to exit",
-            },
-            cameraRadius: {
-                min: 6,
-                max: 40,
             },
         } as {
             [key: string]:
@@ -752,13 +750,14 @@ export async function run() {
     const freeCamera = new FreeControlledCamera(
         canvas,
         (2 * Math.PI) / 5,
-        canvas.clientWidth / canvas.clientHeight
+        presentationSize[0] / presentationSize[1]
     );
 
     const turnCamera = new TurnTableCamera(
         (2 * Math.PI) / 5,
-        canvas.clientWidth / canvas.clientHeight
+        presentationSize[0] / presentationSize[1]
     );
+    turnCamera.activate();
     turnCamera.rotationPivot = vec3.fromValues(
         0,
         simParams.boxHeight * 1.25,
@@ -769,19 +768,54 @@ export async function run() {
 
     turnCamera.rotationSpeed = 0.005;
 
-    let camera: TurnTableCamera | FreeControlledCamera = freeCamera;
+    let camera: TurnTableCamera | FreeControlledCamera = turnCamera;
 
     let t = 0;
+    let currentWidth = canvas.clientWidth;
+    let currentHeight = canvas.clientHeight;
     function frame() {
-        turnCamera.rotatationRadius = simParams.cameraRadius;
+        if (
+            currentWidth !== canvas.clientWidth ||
+            currentHeight != canvas.clientHeight
+        ) {
+            const devicePixelRatio = USE_DEVICE_PIXEL_RATIO
+                ? window.devicePixelRatio ?? 1
+                : 1;
+            const presentationSize = [
+                canvas.clientWidth * devicePixelRatio,
+                canvas.clientHeight * devicePixelRatio,
+            ];
+            context?.configure({
+                device,
+                size: presentationSize,
+                format: presentationFormat,
+                compositingAlphaMode: "opaque",
+            });
+            depthTexture.destroy();
+            depthTexture = device.createTexture({
+                size: presentationSize,
+                format: "depth24plus-stencil8",
+                usage: GPUTextureUsage.RENDER_ATTACHMENT,
+            });
+            currentWidth = canvas.clientWidth;
+            currentHeight = canvas.clientHeight;
+
+            turnCamera.aspectRatio = presentationSize[0] / presentationSize[1];
+            freeCamera.aspectRatio = presentationSize[0] / presentationSize[1];
+        }
+
         turnCamera.lookAt = vec3.fromValues(0, -simParams.boxHeight / 1.5, 0);
         if (simParams.freeCamera) {
             if (camera !== freeCamera) {
                 freeCamera.copyTransform(turnCamera);
             }
+            camera.deactivate();
             camera = freeCamera;
+            camera.activate();
         } else {
+            camera.deactivate();
             camera = turnCamera;
+            camera.activate();
         }
 
         // update camera uniforms
@@ -803,7 +837,7 @@ export async function run() {
             const passEncoder = commandEncoder.beginComputePass();
             passEncoder.setPipeline(computePipeline);
             passEncoder.setBindGroup(0, particleBindGroups[t % 2]);
-            passEncoder.dispatch(Math.ceil(NUM_PARTICLES / 64));
+            passEncoder.dispatchWorkgroups(Math.ceil(NUM_PARTICLES / 64));
             passEncoder.end();
         }
         {

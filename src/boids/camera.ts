@@ -6,6 +6,8 @@ export class Camera {
     private projectionMatrix: mat4;
 
     readonly fovY: number;
+    readonly near: number;
+    readonly far: number;
     position: vec3;
 
     constructor(
@@ -19,8 +21,24 @@ export class Camera {
         this.rotationQuat = quat.create();
         this.projectionMatrix = mat4.create();
         this.fovY = fovY;
+        this.near = near;
+        this.far = far;
         mat4.perspectiveZO(this.projectionMatrix, fovY, aspectRatio, near, far);
     }
+
+    set aspectRatio(ratio: number) {
+        mat4.perspectiveZO(
+            this.projectionMatrix,
+            this.fovY,
+            ratio,
+            this.near,
+            this.far
+        );
+    }
+
+    activate() {}
+
+    deactivate() {}
 
     get rotation() {
         return [...this.rotationDeg];
@@ -66,6 +84,8 @@ export class FreeControlledCamera extends Camera {
 
     private readonly state = { forward: 0, right: 0 };
     private hasFocus: boolean = false;
+    private readonly canvas: HTMLCanvasElement;
+    private lockMouseOnClickHandle: () => void;
 
     constructor(
         canvas: HTMLCanvasElement,
@@ -76,14 +96,8 @@ export class FreeControlledCamera extends Camera {
     ) {
         super(fovY, aspectRatio, near, far);
 
-        canvas.addEventListener(
-            "click",
-            () => {
-                canvas.requestPointerLock();
-            },
-            false
-        );
-
+        this.canvas = canvas;
+        this.lockMouseOnClickHandle = this.lockMouseOnClick.bind(this);
         canvas.setAttribute("tabindex", "0");
 
         const handler = (event: KeyboardEvent) => {
@@ -125,6 +139,18 @@ export class FreeControlledCamera extends Camera {
         document.addEventListener("pointerlockchange", () => {
             this.hasFocus = document.pointerLockElement === canvas;
         });
+    }
+
+    private lockMouseOnClick() {
+        this.canvas.requestPointerLock();
+    }
+
+    override activate() {
+        this.canvas.addEventListener("click", this.lockMouseOnClickHandle);
+    }
+
+    override deactivate() {
+        this.canvas.removeEventListener("click", this.lockMouseOnClickHandle);
     }
 
     updateAndGetViewMatrix(): mat4 {

@@ -242,24 +242,25 @@ fn getBoidWorldMatrix(position: vec3<f32>, velocity: vec3<f32>) -> mat4x4<f32> {
 }
 
 fn getVisibility(shadowMapCoords: vec3<f32>) -> f32 {
-    let pcfResolution = 2;
+    let pcfResolution = 1;
 
     var visibility: f32 = 0.0;
-    // sampele the shadow map only when possible
-    if (all(shadowMapCoords.xy <= vec2<f32>(1.0, 1.0)) && all(shadowMapCoords.xy >= vec2<f32>(0.0, 0.0))) {
-        let offset = 1.0 / vec2<f32>(textureDimensions(shadowMap));
-        for (var i = -pcfResolution; i <= pcfResolution; i = i + 1) {
-            for (var j = -pcfResolution; j <= pcfResolution; j = j + 1) {
-                visibility = visibility + textureSampleCompare(
-                    shadowMap,
-                    shadowSampler,
-                    shadowMapCoords.xy + vec2<f32>(f32(i), f32(j)) * offset, shadowMapCoords.z - 0.007
-                );
-            }
+    let offset = 1.0 / vec2<f32>(textureDimensions(shadowMap));
+    for (var i = -pcfResolution; i <= pcfResolution; i = i + 1) {
+        for (var j = -pcfResolution; j <= pcfResolution; j = j + 1) {
+            visibility = visibility + textureSampleCompare(
+                shadowMap,
+                shadowSampler,
+                shadowMapCoords.xy + vec2<f32>(f32(i), f32(j)) * offset, shadowMapCoords.z - 0.007
+            );
         }
     }
 
-    visibility = visibility / f32((pcfResolution + pcfResolution + 1) * (pcfResolution + pcfResolution + 1));
+    if (all(shadowMapCoords.xy <= vec2<f32>(1.0, 1.0)) && all(shadowMapCoords.xy >= vec2<f32>(0.0, 0.0))) {
+        visibility = visibility / f32((pcfResolution + pcfResolution + 1) * (pcfResolution + pcfResolution + 1));
+    } else {
+        visibility = 1.0;
+    }
 
     return visibility;
 }
