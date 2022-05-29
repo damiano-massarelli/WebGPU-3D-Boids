@@ -53,7 +53,6 @@ async function configureCanvas(canvasId: string, useDevicePixelRatio: boolean) {
     console.log(presentationFormat);
     context?.configure({
         device,
-        //size: presentationSize,
         format: presentationFormat,
         compositingAlphaMode: "opaque",
     });
@@ -787,12 +786,6 @@ export async function run() {
             ];
             canvas.width = presentationSize[0];
             canvas.height = presentationSize[1];
-            // context?.configure({
-            //     device,
-            //     size: presentationSize,
-            //     format: presentationFormat,
-            //     compositingAlphaMode: "opaque",
-            // });
             depthTexture.destroy();
             depthTexture = device.createTexture({
                 size: presentationSize,

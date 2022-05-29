@@ -40,6 +40,13 @@ struct Material {
     specularIntensity: f32,  // 20
 };
 
+// from https://www.shadertoy.com/view/4djSRW
+fn hash13(input: vec3<f32>) -> f32 {
+	var p3  = fract(input * .1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
 fn computeLight(light: LightData, material: Material, cameraPosition: vec3<f32>, position: vec3<f32>, normal: vec3<f32>, visibility: f32, shadowAttenuation: f32) -> vec4<f32> {
     let shadow = mix(shadowAttenuation, 1.0, visibility);
     let N: vec3<f32> = normalize(normal.xyz);
@@ -49,12 +56,19 @@ fn computeLight(light: LightData, material: Material, cameraPosition: vec3<f32>,
     let NdotL = max(dot(N, L), 0.0);
     let kD: f32 = shadow * NdotL + light.ambientIntensity;
     var kSEnabled = 0.0;
-    if (NdotL > 0.0) {
+
+    let R = reflect(-L, N);
+    if (NdotL > 0.0 && dot(V, N) > 0.0) {
         kSEnabled = 1.0;
     }
-    let kS: f32 = shadow * kSEnabled * material.specularIntensity * pow(max(dot(N, H), 0.0), material.shininess);
+    var alpha = material.color.a;
+    let kS: f32 = shadow * kSEnabled * material.specularIntensity * pow(max(dot(H, N), 0.0), material.shininess);
+    alpha = mix(alpha, 1.0, kS);
     let finalColor = material.color.rgb * light.color.rgb * kD + light.color.rgb * kS;
-    return vec4<f32>(finalColor, material.color.a);
+    let noise = hash13(position);
+
+    // also add some noise/dither to avoid banding artifacts 
+    return vec4<f32>(finalColor, alpha) + mix(-0.5/255.0, 0.5/255.0, noise);
 };
 
 @group(0)
@@ -396,21 +410,31 @@ fn mainVSBox(@location(0) a_pos : vec3<f32>,
 fn mainFSBox(in: BoxData, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4<f32> {
     var material: Material;
     material.color = vec4<f32>(.8, .8, .8, 0.1);
+    material.specularIntensity = 1.;
     var wsNormal = in.wsNormal;
 
-    // make sure the normal always points towards the light source
-    if (dot(-lightData.direction.xyz, in.wsNormal) < 0.0) {
-        wsNormal = -wsNormal;
-    }
-
+    var shadowAttenuation = 0.5;
     // use a different color for the cube base
-    if (in.wsNormal.y > 0.5) {
+    if (in.wsNormal.y < -0.5) {
         material.color = vec4<f32>(0.15, 0.15, 0.15, 1.0);
+        material.specularIntensity = 0.1;
+
+        if (frontFacing) {
+            shadowAttenuation = 1.0; // hide shadow when looking at the base from below
+        }
+        else {
+            wsNormal = -wsNormal;
+        }
+    }
+    else {
+        // make sure the normal always points towards the light source
+        if (dot(-lightData.direction.xyz, in.wsNormal) < 0.0) {
+            wsNormal = -wsNormal;
+        }
     }
 
     material.shininess = 10.0;
-    material.specularIntensity = 0.1;
-    return computeLight(lightData, material, cameraData.position.xyz, in.wsPos.xyz, wsNormal, getVisibility(in.shadowMapCoords), 0.5);
+    return computeLight(lightData, material, cameraData.position.xyz, in.wsPos.xyz, wsNormal, getVisibility(in.shadowMapCoords), shadowAttenuation);
 }
 
 struct BackgroundData {
