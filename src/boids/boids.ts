@@ -54,7 +54,7 @@ async function configureCanvas(canvasId: string, useDevicePixelRatio: boolean) {
     context?.configure({
         device,
         format: presentationFormat,
-        compositingAlphaMode: "opaque",
+        alphaMode: "opaque",
     });
 
     return { device, canvas, context, presentationSize, presentationFormat };
