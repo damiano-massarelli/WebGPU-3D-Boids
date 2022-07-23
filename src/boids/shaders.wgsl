@@ -99,7 +99,7 @@ var shadowMap: texture_depth_2d;
 @binding(6) 
 var shadowSampler: sampler_comparison;
 
-@stage(compute)
+@compute
 @workgroup_size(64)
 fn mainCS(@builtin(global_invocation_id) globalInvocationID: vec3<u32>) {
     let index: u32 = globalInvocationID.x;
@@ -279,7 +279,7 @@ fn getVisibility(shadowMapCoords: vec3<f32>) -> f32 {
     return visibility;
 }
 
-@stage(vertex)
+@vertex
 fn mainVS(@location(0) a_particlePos : vec3<f32>,
              @location(1) a_particleVel : vec3<f32>,
              @location(2) a_pos : vec3<f32>,
@@ -303,7 +303,7 @@ fn mainVS(@location(0) a_particlePos : vec3<f32>,
     return output;
 }
 
-@stage(vertex)
+@vertex
 fn mainVSShadow(@location(0) a_particlePos : vec3<f32>,
              @location(1) a_particleVel : vec3<f32>,
              @location(2) a_pos : vec3<f32>,
@@ -321,7 +321,7 @@ fn mainVSShadow(@location(0) a_particlePos : vec3<f32>,
     return lightData.viewProjectionMatrix * wsPosition;
 }
 
-@stage(fragment)
+@fragment
 fn mainFS(in: VSOutBoids) -> @location(0) vec4<f32> {
     var material: Material;
     material.color = in.col;
@@ -330,7 +330,7 @@ fn mainFS(in: VSOutBoids) -> @location(0) vec4<f32> {
     return computeLight(lightData, material, cameraData.position.xyz, in.wsPos.xyz, in.wsNormal.xyz, getVisibility(in.shadowMapCoords), 0.0);
 }
 
-@stage(vertex)
+@vertex
 fn mainVSOutline(@location(0) a_particlePos : vec3<f32>,
              @location(1) a_particleVel : vec3<f32>,
              @location(2) a_pos : vec3<f32>,
@@ -366,7 +366,7 @@ fn mainVSOutline(@location(0) a_particlePos : vec3<f32>,
   return cameraData.viewProjectionMatrix * worldMatrix * scale * vec4<f32>(a_pos, 1.0);
 }
 
-@stage(fragment)
+@fragment
 fn mainFSOutline() -> @location(0) vec4<f32> {
     return vec4<f32>(0.68, 0.85, 0.9, 1.0);
 }
@@ -386,7 +386,7 @@ struct BoxData {
     shadowMapCoords: vec3<f32>,
 };
 
-@stage(vertex)
+@vertex
 fn mainVSBox(@location(0) a_pos : vec3<f32>,
              @location(1) a_norm: vec3<f32>) -> BoxData {
     let scale = mat4x4<f32>(
@@ -406,7 +406,7 @@ fn mainVSBox(@location(0) a_pos : vec3<f32>,
     return out;
 }
 
-@stage(fragment)
+@fragment
 fn mainFSBox(in: BoxData, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4<f32> {
     var material: Material;
     material.color = vec4<f32>(.8, .8, .8, 0.1);
@@ -445,7 +445,7 @@ struct BackgroundData {
     color: vec4<f32>,
 };
 
-@stage(vertex)
+@vertex
 fn mainVSBackground(@builtin(vertex_index) vertexIndex: u32) -> BackgroundData {
     var screenQuad = array<vec2<f32>, 4>(
             vec2<f32>(-1.0, -1.0),
@@ -462,7 +462,7 @@ fn mainVSBackground(@builtin(vertex_index) vertexIndex: u32) -> BackgroundData {
     return out;
 }
 
-@stage(fragment)
+@fragment
 fn mainFSBackground(in: BackgroundData) -> @location(0) vec4<f32> {
     return in.color;
 }
