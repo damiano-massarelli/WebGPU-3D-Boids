@@ -4,15 +4,16 @@ struct Particle {
 };
 
 struct SimParams {
-    deltaT: f32,
-    rule1Distance: f32,
-    rule2Distance: f32,
-    rule3Distance: f32,
-    rule1Scale: f32,
-    rule2Scale: f32,
-    rule3Scale: f32,
-    boxWidth: f32,
-    boxHeight: f32,
+    deltaT: f32,            // 0 
+    rule1Distance: f32,     // 4
+    rule2Distance: f32,     // 8
+    rule3Distance: f32,     // 12
+    rule1Scale: f32,        // 16
+    rule2Scale: f32,        // 20
+    rule3Scale: f32,        // 24
+    boxWidth: f32,          // 28
+    boxHeight: f32,         // 32
+                            // 36
 };
 
 struct Particles {

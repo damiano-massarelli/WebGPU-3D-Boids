@@ -6,6 +6,37 @@ import { mat4, vec3, vec4 } from "gl-matrix";
 
 const USE_DEVICE_PIXEL_RATIO = true;
 
+function structInfo(elements: [number, number, string?][]) {
+    const result = {
+        entries: new Map<string, number>(),
+        structSize: 0,
+    };
+    let maxAlignment = 0;
+    let offset = 0;
+    for (let element of elements) {
+        const size = element[0];
+        const alignment = element[1];
+        const elemName = element[2];
+
+        maxAlignment = Math.max(maxAlignment, alignment);
+
+        if (offset % alignment != 0) {
+            // Does not match required alignment
+            offset += Math.ceil(offset / alignment) * alignment; // next multiple of alignment
+        }
+
+        // add entry in result map
+        if (elemName != null) {
+            result.entries.set(elemName, offset);
+        }
+
+        offset += size;
+    }
+
+    result.structSize = Math.ceil(offset / maxAlignment) * maxAlignment;
+    return result;
+}
+
 async function configureShadowMap(device: GPUDevice, shadowMapRes: number) {
     const shadowDepthTexture = device.createTexture({
         label: "shadow map texture",
@@ -531,7 +562,7 @@ export async function run() {
         }
     });
 
-    const simParamBufferSize = 9 * Float32Array.BYTES_PER_ELEMENT;
+    const simParamBufferSize = 36;
     const simParamBuffer = device.createBuffer({
         label: "simulation params buffer",
         size: simParamBufferSize,
@@ -597,7 +628,13 @@ export async function run() {
     };
     const lightDataBuffer = device.createBuffer({
         label: "light data buffer",
-        size: (16 + 4 * 3 + 1) * Float32Array.BYTES_PER_ELEMENT, // 1 4x4 matrix + 3 vec4 + 1 float
+        size: structInfo([
+            [64, 16],
+            [16, 16],
+            [16, 16],
+            [16, 16],
+            [4, 4],
+        ]).structSize, // 1 4x4 matrix + 3 vec4 + 1 float
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         mappedAtCreation: true,
     });
@@ -645,7 +682,12 @@ export async function run() {
 
     const cameraBuffer = device.createBuffer({
         label: "cameraBuffer",
-        size: (16 + 4 + 3 + 1) * Float32Array.BYTES_PER_ELEMENT,
+        size: structInfo([
+            [64, 16],
+            [16, 16],
+            [6, 8],
+            [4, 4],
+        ]).structSize,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         mappedAtCreation: false,
     });
