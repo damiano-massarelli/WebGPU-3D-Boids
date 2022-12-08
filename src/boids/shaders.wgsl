@@ -1,6 +1,7 @@
 struct Particle {
-    pos: vec4<f32>,
-    vel: vec4<f32>,
+    pos: vec4<f32>,  // 0
+    vel: vec4<f32>,  // 16
+                     // 32
 };
 
 struct SimParams {
@@ -25,6 +26,7 @@ struct CameraData {
     position: vec4<f32>,               // 64
     rotation: vec3<f32>,               // 80
     fovYRad: f32,                      // 92
+                                       // 96
 };
 
 struct LightData {
@@ -33,6 +35,7 @@ struct LightData {
     direction: vec4<f32>,              // 80
     color: vec4<f32>,                  // 96
     ambientIntensity: f32,             // 112
+                                       // 116
 };
 
 struct Material {
