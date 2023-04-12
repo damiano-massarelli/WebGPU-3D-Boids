@@ -754,8 +754,7 @@ export async function run() {
     let currentWidth = canvas.clientWidth;
     let currentHeight = canvas.clientHeight;
     function frame(now: number) {
-        const elapsedSeconds = (now - prevTime) / 1000;
-        console.log(elapsedSeconds * simParams.deltaT);
+        const elapsedSeconds = Math.min(now - prevTime, 66) / 1000; // clamp to max 15 fps, usefull when window goes out of focus
         prevTime = now;
 
         // update delta time for compute simulation

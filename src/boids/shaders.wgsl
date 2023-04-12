@@ -462,7 +462,7 @@ fn mainVSBackground(@builtin(vertex_index) vertexIndex: u32) -> BackgroundData {
 
     let fovYDeg = cameraData.fovYRad * 180.0 / 3.14; 
     let orbitPitchBlend = sin((cameraData.rotation.x + (out.position.y * fovYDeg/2.0)) * 3.14 / 180.0) * 0.5 + 0.5;
-    out.color = mix(vec4<f32>(0.08, 0.1, 0.54, 1.0), vec4<f32>(0.16, 0.24, 0.74, 1.0), orbitPitchBlend);
+    out.color = mix(vec4<f32>(0.08, 0.1, 0.54, 1.0), vec4<f32>(0.16, 0.24, 0.74, 1.0) * 3.5, orbitPitchBlend);
     return out;
 }
 
