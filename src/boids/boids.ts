@@ -42,8 +42,7 @@ async function configureShadowMap(device: GPUDevice, shadowMapRes: number) {
         label: "shadow map texture",
         format: "depth32float",
         size: [shadowMapRes, shadowMapRes, 1],
-        usage:
-            GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
 
     const shadowDepthTextureView = shadowDepthTexture.createView();
@@ -68,19 +67,13 @@ async function configureCanvas(canvasId: string, useDevicePixelRatio: boolean) {
     const adapter = await navigator.gpu.requestAdapter();
     const device = await adapter!.requestDevice();
 
-    const devicePixelRatio = useDevicePixelRatio
-        ? window.devicePixelRatio ?? 1
-        : 1;
-    const presentationSize = [
-        canvas.clientWidth * devicePixelRatio,
-        canvas.clientHeight * devicePixelRatio,
-    ];
+    const devicePixelRatio = useDevicePixelRatio ? window.devicePixelRatio ?? 1 : 1;
+    const presentationSize = [canvas.clientWidth * devicePixelRatio, canvas.clientHeight * devicePixelRatio];
 
     canvas.width = presentationSize[0];
     canvas.height = presentationSize[1];
 
-    const presentationFormat: GPUTextureFormat =
-        navigator.gpu.getPreferredCanvasFormat();
+    const presentationFormat: GPUTextureFormat = navigator.gpu.getPreferredCanvasFormat();
     console.log(presentationFormat);
     context?.configure({
         device,
@@ -98,8 +91,7 @@ export async function run() {
         return;
     }
 
-    const { device, canvas, context, presentationSize, presentationFormat } =
-        await configureCanvas("canvas-wegbpu", USE_DEVICE_PIXEL_RATIO);
+    const { device, canvas, context, presentationSize, presentationFormat } = await configureCanvas("canvas-wegbpu", USE_DEVICE_PIXEL_RATIO);
 
     // compute and render shader module
     const shaderModule = device.createShaderModule({
@@ -301,9 +293,7 @@ export async function run() {
         stencilReadMask: 0xff,
         stencilWriteMask: 0x00,
     };
-    const renderPipelineOutline = device.createRenderPipeline(
-        boidsRenderPipelineDesc
-    );
+    const renderPipelineOutline = device.createRenderPipeline(boidsRenderPipelineDesc);
 
     // render pipeline for boids shadows
     boidsRenderPipelineDesc.vertex.entryPoint = "mainVSShadow";
@@ -317,9 +307,7 @@ export async function run() {
     boidsRenderPipelineDesc.layout = device.createPipelineLayout({
         bindGroupLayouts: [renderBindGroupShadowLayout],
     });
-    const renderPipelineShadow = device.createRenderPipeline(
-        boidsRenderPipelineDesc
-    );
+    const renderPipelineShadow = device.createRenderPipeline(boidsRenderPipelineDesc);
 
     const boxPipelineDescr: GPURenderPipelineDescriptor = {
         label: "render pipeline box",
@@ -396,8 +384,7 @@ export async function run() {
     // render pipeline for box
     const renderPipelineBoxBack = device.createRenderPipeline(boxPipelineDescr);
     boxPipelineDescr.primitive!.cullMode = "back";
-    const renderPipelineBoxFront =
-        device.createRenderPipeline(boxPipelineDescr);
+    const renderPipelineBoxFront = device.createRenderPipeline(boxPipelineDescr);
 
     // Compute pipeline
     const computePipeline = device.createComputePipeline({
@@ -410,11 +397,7 @@ export async function run() {
     });
 
     // Setup boid geometry
-    const {
-        positions: conePositions,
-        normals: coneNormals,
-        indices: coneIndices,
-    } = cone(0.4, 20);
+    const { positions: conePositions, normals: coneNormals, indices: coneIndices } = cone(0.4, 20);
 
     // vertex position buffer
     const conePB = device.createBuffer({
@@ -447,11 +430,7 @@ export async function run() {
     coneIB.unmap();
 
     // Setup box geometry
-    const {
-        positions: cubePositions,
-        normals: cubeNormals,
-        indices: cubeIndices,
-    } = cube();
+    const { positions: cubePositions, normals: cubeNormals, indices: cubeIndices } = cube();
 
     // vertex position buffer
     const cubePB = device.createBuffer({
@@ -485,7 +464,7 @@ export async function run() {
 
     // simulation parameters
     const simParams = {
-        deltaT: 0.07,
+        deltaT: 4.375,
         cohesionDistance: 2,
         separationDistance: 1.2,
         alignmentDistance: 1.15,
@@ -500,7 +479,7 @@ export async function run() {
         meta: {
             deltaT: {
                 min: 0,
-                max: 0.15,
+                max: 10,
             },
             cohesionDistance: {
                 min: 0,
@@ -535,30 +514,19 @@ export async function run() {
                 min: 4,
             },
             freeCamera: {
-                toolTip:
-                    "Once selected click on the viewport to control the camera with WASD + mouse. Esc to exit",
+                toolTip: "Once selected click on the viewport to control the camera with WASD + mouse. Esc to exit",
             },
         } as {
-            [key: string]:
-                | { min?: number; max?: number; toolTip?: string }
-                | undefined;
+            [key: string]: { min?: number; max?: number; toolTip?: string } | undefined;
         },
     };
     Object.keys(simParams).forEach((k) => {
         if (k !== "meta") {
-            const controller = gui.add(
-                simParams,
-                k,
-                simParams.meta[k]?.min,
-                simParams.meta[k]?.max
-            );
+            const controller = gui.add(simParams, k, simParams.meta[k]?.min, simParams.meta[k]?.max);
             controller.onChange(updateSimParams);
 
             // very cheap way of creating tooltips
-            controller.domElement.parentElement!.setAttribute(
-                "title",
-                simParams.meta[k]?.toolTip ?? ""
-            );
+            controller.domElement.parentElement!.setAttribute("title", simParams.meta[k]?.toolTip ?? "");
         }
     });
 
@@ -572,9 +540,9 @@ export async function run() {
     function updateSimParams() {
         device.queue.writeBuffer(
             simParamBuffer,
-            0,
+            Float32Array.BYTES_PER_ELEMENT,
             new Float32Array([
-                simParams.deltaT,
+                // deltaT is updated taking into account framerate
                 simParams.cohesionDistance,
                 simParams.separationDistance,
                 simParams.alignmentDistance,
@@ -589,24 +557,14 @@ export async function run() {
     updateSimParams();
 
     // Light data
-    const lightPosition = vec4.fromValues(
-        simParams.boxWidth / 2,
-        simParams.boxHeight * 1.5,
-        simParams.boxWidth / 1.5,
-        0
-    );
+    const lightPosition = vec4.fromValues(simParams.boxWidth / 2, simParams.boxHeight * 1.5, simParams.boxWidth / 1.5, 0);
     const lightDirection = vec4.create();
     vec4.negate(lightDirection, lightPosition);
     vec4.normalize(lightDirection, lightDirection);
     const lightViewProj = mat4.create();
     {
         const viewMatrix = mat4.create();
-        mat4.lookAt(
-            viewMatrix,
-            lightPosition as vec3,
-            vec3.fromValues(0, 0, 0),
-            vec3.fromValues(0, 1, 0)
-        );
+        mat4.lookAt(viewMatrix, lightPosition as vec3, vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
         const lightProjectionMatrix = mat4.create();
         mat4.orthoZO(
             lightProjectionMatrix,
@@ -651,12 +609,9 @@ export async function run() {
     const NUM_PARTICLES = 550;
     const initialParticleData = new Float32Array(NUM_PARTICLES * 8); // x, y, z, vx, vy, vz per particle + padding
     for (let i = 0; i < NUM_PARTICLES; ++i) {
-        initialParticleData[8 * i + 0] =
-            simParams.boxWidth * (2 * Math.random() - 1); // x
-        initialParticleData[8 * i + 1] =
-            simParams.boxHeight * (2 * Math.random() - 1); // y
-        initialParticleData[8 * i + 2] =
-            simParams.boxWidth * (2 * Math.random() - 1); // z
+        initialParticleData[8 * i + 0] = simParams.boxWidth * (2 * Math.random() - 1); // x
+        initialParticleData[8 * i + 1] = simParams.boxHeight * (2 * Math.random() - 1); // y
+        initialParticleData[8 * i + 2] = simParams.boxWidth * (2 * Math.random() - 1); // z
         initialParticleData[8 * i + 3] = 0; // padding
         initialParticleData[8 * i + 4] = 2 * Math.random() - 1; // vx
         initialParticleData[8 * i + 5] = 2 * Math.random() - 1; // vy
@@ -674,9 +629,7 @@ export async function run() {
             usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE,
             mappedAtCreation: true,
         });
-        new Float32Array(particleBuffers[i].getMappedRange()).set(
-            initialParticleData
-        );
+        new Float32Array(particleBuffers[i].getMappedRange()).set(initialParticleData);
         particleBuffers[i].unmap();
     }
 
@@ -692,10 +645,7 @@ export async function run() {
         mappedAtCreation: false,
     });
 
-    const { shadowMapTextureView, shadowMapSampler } = await configureShadowMap(
-        device,
-        1024
-    );
+    const { shadowMapTextureView, shadowMapSampler } = await configureShadowMap(device, 1024);
     const renderBindGroup = device.createBindGroup({
         label: "render bind group",
         layout: renderBindGroupLayout,
@@ -788,44 +738,32 @@ export async function run() {
         });
     }
 
-    const freeCamera = new FreeControlledCamera(
-        canvas,
-        (2 * Math.PI) / 5,
-        presentationSize[0] / presentationSize[1]
-    );
+    const freeCamera = new FreeControlledCamera(canvas, (2 * Math.PI) / 5, presentationSize[0] / presentationSize[1]);
 
-    const turnCamera = new TurnTableCamera(
-        (2 * Math.PI) / 5,
-        presentationSize[0] / presentationSize[1]
-    );
+    const turnCamera = new TurnTableCamera((2 * Math.PI) / 5, presentationSize[0] / presentationSize[1]);
     turnCamera.activate();
-    turnCamera.rotationPivot = vec3.fromValues(
-        0,
-        simParams.boxHeight * 1.25,
-        0
-    );
-    turnCamera.rotatationRadius =
-        Math.max(simParams.boxWidth, simParams.boxHeight) * 2;
+    turnCamera.rotationPivot = vec3.fromValues(0, simParams.boxHeight * 1.25, 0);
+    turnCamera.rotatationRadius = Math.max(simParams.boxWidth, simParams.boxHeight) * 2;
 
     turnCamera.rotationSpeed = 0.005;
 
     let camera: TurnTableCamera | FreeControlledCamera = turnCamera;
 
     let t = 0;
+    let prevTime = 0;
     let currentWidth = canvas.clientWidth;
     let currentHeight = canvas.clientHeight;
-    function frame() {
-        if (
-            currentWidth !== canvas.clientWidth ||
-            currentHeight != canvas.clientHeight
-        ) {
-            const devicePixelRatio = USE_DEVICE_PIXEL_RATIO
-                ? window.devicePixelRatio ?? 1
-                : 1;
-            const presentationSize = [
-                canvas.clientWidth * devicePixelRatio,
-                canvas.clientHeight * devicePixelRatio,
-            ];
+    function frame(now: number) {
+        const elapsedSeconds = (now - prevTime) / 1000;
+        console.log(elapsedSeconds * simParams.deltaT);
+        prevTime = now;
+
+        // update delta time for compute simulation
+        device.queue.writeBuffer(simParamBuffer, 0, new Float32Array([elapsedSeconds * simParams.deltaT]));
+
+        if (currentWidth !== canvas.clientWidth || currentHeight != canvas.clientHeight) {
+            const devicePixelRatio = USE_DEVICE_PIXEL_RATIO ? window.devicePixelRatio ?? 1 : 1;
+            const presentationSize = [canvas.clientWidth * devicePixelRatio, canvas.clientHeight * devicePixelRatio];
             canvas.width = presentationSize[0];
             canvas.height = presentationSize[1];
             depthTexture.destroy();
