@@ -22,7 +22,7 @@ function structInfo(elements: [number, number, string?][]) {
 
         if (offset % alignment != 0) {
             // Does not match required alignment
-            offset += Math.ceil(offset / alignment) * alignment; // next multiple of alignment
+            offset = Math.ceil(offset / alignment) * alignment; // next multiple of alignment
         }
 
         // add entry in result map
@@ -468,9 +468,9 @@ export async function run() {
         cohesionDistance: 2,
         separationDistance: 1.2,
         alignmentDistance: 1.15,
-        cohesionScale: 0.02,
-        separationScale: 0.02,
-        alignmentScale: 0.07,
+        cohesionScale: 0.28,
+        separationScale: 0.28,
+        alignmentScale: 0.98,
         boxWidth: 20,
         boxHeight: 12,
         showOutline: false,
@@ -495,15 +495,15 @@ export async function run() {
             },
             cohesionScale: {
                 min: 0,
-                max: 1,
+                max: 2,
             },
             separationScale: {
                 min: 0,
-                max: 1,
+                max: 2,
             },
             alignmentScale: {
                 min: 0,
-                max: 1,
+                max: 2,
             },
             boxWidth: {
                 max: 20,
@@ -739,13 +739,14 @@ export async function run() {
     }
 
     const freeCamera = new FreeControlledCamera(canvas, (2 * Math.PI) / 5, presentationSize[0] / presentationSize[1]);
+    freeCamera.moveSpeed = 5;
 
     const turnCamera = new TurnTableCamera((2 * Math.PI) / 5, presentationSize[0] / presentationSize[1]);
     turnCamera.activate();
     turnCamera.rotationPivot = vec3.fromValues(0, simParams.boxHeight * 1.25, 0);
     turnCamera.rotatationRadius = Math.max(simParams.boxWidth, simParams.boxHeight) * 2;
 
-    turnCamera.rotationSpeed = 0.005;
+    turnCamera.rotationSpeed = 0.25;
 
     let camera: TurnTableCamera | FreeControlledCamera = turnCamera;
 
@@ -797,7 +798,7 @@ export async function run() {
             cameraBuffer,
             0,
             new Float32Array([
-                ...camera.updateAndGetViewProjectionMatrix(),
+                ...camera.updateAndGetViewProjectionMatrix(elapsedSeconds),
                 ...camera.position,
                 0, // padding
                 ...camera.rotation,

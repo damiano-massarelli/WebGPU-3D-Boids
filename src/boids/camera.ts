@@ -10,12 +10,7 @@ export class Camera {
     readonly far: number;
     position: vec3;
 
-    constructor(
-        fovY: number,
-        aspectRatio: number,
-        near: number = 0.1,
-        far: number = 1000
-    ) {
+    constructor(fovY: number, aspectRatio: number, near: number = 0.1, far: number = 1000) {
         this.position = [0, 0, 0];
         this.rotationDeg = [0, 0, 0];
         this.rotationQuat = quat.create();
@@ -27,13 +22,7 @@ export class Camera {
     }
 
     set aspectRatio(ratio: number) {
-        mat4.perspectiveZO(
-            this.projectionMatrix,
-            this.fovY,
-            ratio,
-            this.near,
-            this.far
-        );
+        mat4.perspectiveZO(this.projectionMatrix, this.fovY, ratio, this.near, this.far);
     }
 
     activate() {}
@@ -87,13 +76,7 @@ export class FreeControlledCamera extends Camera {
     private readonly canvas: HTMLCanvasElement;
     private lockMouseOnClickHandle: () => void;
 
-    constructor(
-        canvas: HTMLCanvasElement,
-        fovY: number,
-        aspectRatio: number,
-        near: number = 0.1,
-        far: number = 1000
-    ) {
+    constructor(canvas: HTMLCanvasElement, fovY: number, aspectRatio: number, near: number = 0.1, far: number = 1000) {
         super(fovY, aspectRatio, near, far);
 
         this.canvas = canvas;
@@ -153,21 +136,21 @@ export class FreeControlledCamera extends Camera {
         this.canvas.removeEventListener("click", this.lockMouseOnClickHandle);
     }
 
-    updateAndGetViewMatrix(): mat4 {
+    updateAndGetViewMatrix(deltaSeconds: number): mat4 {
         const mat = this.getUpRightMatrix();
         const forward: vec3 = [mat[6], mat[7], mat[8]];
         const right: vec3 = [mat[0], mat[1], mat[2]];
 
-        vec3.scale(forward, forward, this.state.forward);
-        vec3.scale(right, right, this.state.right);
+        vec3.scale(forward, forward, this.state.forward * deltaSeconds);
+        vec3.scale(right, right, this.state.right * deltaSeconds);
         vec3.add(right, right, forward);
         vec3.add(this.position, this.position, right);
 
         return this.getViewMatrix();
     }
 
-    updateAndGetViewProjectionMatrix(): mat4 {
-        this.updateAndGetViewMatrix();
+    updateAndGetViewProjectionMatrix(deltaSeconds: number): mat4 {
+        this.updateAndGetViewMatrix(deltaSeconds);
         return this.getViewProjectionMatrix();
     }
 }
@@ -180,17 +163,12 @@ export class TurnTableCamera extends Camera {
 
     private angleRad = 0;
 
-    constructor(
-        fovY: number,
-        aspectRatio: number,
-        near: number = 0.1,
-        far: number = 1000
-    ) {
+    constructor(fovY: number, aspectRatio: number, near: number = 0.1, far: number = 1000) {
         super(fovY, aspectRatio, near, far);
     }
 
-    updateAndGetViewMatrix(): mat4 {
-        this.angleRad += this.rotationSpeed;
+    updateAndGetViewMatrix(deltaSeconds: number): mat4 {
+        this.angleRad += this.rotationSpeed * deltaSeconds;
         this.position[0] = this.rotatationRadius * Math.sin(this.angleRad);
         this.position[2] = this.rotatationRadius * Math.cos(this.angleRad);
         this.position[1] = this.rotationPivot[1];
@@ -218,8 +196,8 @@ export class TurnTableCamera extends Camera {
         return this.getViewMatrix();
     }
 
-    updateAndGetViewProjectionMatrix(): mat4 {
-        this.updateAndGetViewMatrix();
+    updateAndGetViewProjectionMatrix(deltaSeconds: number): mat4 {
+        this.updateAndGetViewMatrix(deltaSeconds);
         return this.getViewProjectionMatrix();
     }
 }

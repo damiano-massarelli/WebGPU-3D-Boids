@@ -176,8 +176,8 @@ fn mainCS(@builtin(global_invocation_id) globalInvocationID: vec3<u32>) {
         cVel = cVel / vec3<f32>(temp, temp, temp);
     }
 
-    vVel = vVel + (cMass * params.rule1Scale) + (colVel * params.rule2Scale) +
-        (cVel * params.rule3Scale);
+    vVel = vVel + params.deltaT * ((cMass * params.rule1Scale) + (colVel * params.rule2Scale) +
+        (cVel * params.rule3Scale));
     
     // fishy "random"
     //let offset = 0.1 * vec3<f32>(cos(vPos.x * 5.0 + f32(index) / 10.), sin(vPos.y * 5.0 + f32(index) / 10.), cos(vPos.z * 5.0 + f32(index) / 10.));
@@ -196,7 +196,7 @@ fn mainCS(@builtin(global_invocation_id) globalInvocationID: vec3<u32>) {
         if (dist < maxDist) {
             var intensity = 1.0 - (dist - minDist) / (maxDist - minDist);
             intensity = pow(clamp(intensity, 0.0, 1.0), 0.5);
-            var directionIntensity = 0.1;
+            var directionIntensity = 1.4;
             if (dot(vVel, n) > 0.0) { // reduce repulsion intensity if the boid is going in the direction of the plane normal
                 directionIntensity = directionIntensity / 2.5;
             }
@@ -205,7 +205,7 @@ fn mainCS(@builtin(global_invocation_id) globalInvocationID: vec3<u32>) {
                 directionIntensity = directionIntensity * 10.0 * (minDist - dist) / minDist;
             }
 
-            d = normalize(d + directionIntensity * intensity * n);
+            d = normalize(d + params.deltaT * directionIntensity * intensity * n);
             
             if (dist <= 0.1) {
                 d = n; // make sure boids do not go outside the box
