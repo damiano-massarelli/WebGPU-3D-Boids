@@ -4,7 +4,7 @@ import shader from "./shaders.wgsl";
 import * as dat from "dat.gui";
 import { mat4, vec3, vec4 } from "gl-matrix";
 
-const USE_DEVICE_PIXEL_RATIO = true;
+const USE_DEVICE_PIXEL_RATIO = false;
 const MSAA_SAMPLES = 4;
 
 function structInfo(elements: [number, number, string?][]) {
