@@ -5,6 +5,7 @@ import * as dat from "dat.gui";
 import { mat4, vec3, vec4 } from "gl-matrix";
 
 const USE_DEVICE_PIXEL_RATIO = true;
+const MSAA_SAMPLES = 4;
 
 function structInfo(elements: [number, number, string?][]) {
     const result = {
@@ -99,11 +100,21 @@ export async function run() {
         code: shader,
     });
 
-    // create depth texture
-    let depthTexture = device.createTexture({
+    // create color buffer
+    let colorBuffer = device.createTexture({
+        size: presentationSize,
+        format: presentationFormat,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        sampleCount: MSAA_SAMPLES,
+    });
+
+    // create depth buffer
+    let depthBuffer = device.createTexture({
+        label: "depth buffer",
         size: presentationSize,
         format: "depth24plus-stencil8",
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        sampleCount: MSAA_SAMPLES,
     });
 
     // Background pipeline
@@ -113,6 +124,9 @@ export async function run() {
         vertex: {
             module: shaderModule,
             entryPoint: "mainVSBackground",
+        },
+        multisample: {
+            count: MSAA_SAMPLES,
         },
         fragment: {
             module: shaderModule,
@@ -250,6 +264,9 @@ export async function run() {
                 },
             ],
         },
+        multisample: {
+            count: MSAA_SAMPLES,
+        },
         fragment: {
             module: shaderModule,
             entryPoint: "mainFS",
@@ -299,6 +316,7 @@ export async function run() {
     boidsRenderPipelineDesc.vertex.entryPoint = "mainVSShadow";
     boidsRenderPipelineDesc.fragment = undefined;
     boidsRenderPipelineDesc.label = "boids render pipeline shadow";
+    boidsRenderPipelineDesc.multisample = undefined;
     boidsRenderPipelineDesc.depthStencil = {
         depthWriteEnabled: true,
         depthCompare: "less",
@@ -344,6 +362,9 @@ export async function run() {
                     ],
                 },
             ],
+        },
+        multisample: {
+            count: MSAA_SAMPLES,
         },
         fragment: {
             module: shaderModule,
@@ -766,11 +787,21 @@ export async function run() {
             const presentationSize = [canvas.clientWidth * devicePixelRatio, canvas.clientHeight * devicePixelRatio];
             canvas.width = presentationSize[0];
             canvas.height = presentationSize[1];
-            depthTexture.destroy();
-            depthTexture = device.createTexture({
+
+            colorBuffer.destroy();
+            colorBuffer = device.createTexture({
+                size: presentationSize,
+                format: presentationFormat,
+                usage: GPUTextureUsage.RENDER_ATTACHMENT,
+                sampleCount: MSAA_SAMPLES,
+            });
+
+            depthBuffer.destroy();
+            depthBuffer = device.createTexture({
                 size: presentationSize,
                 format: "depth24plus-stencil8",
                 usage: GPUTextureUsage.RENDER_ATTACHMENT,
+                sampleCount: MSAA_SAMPLES,
             });
             currentWidth = canvas.clientWidth;
             currentHeight = canvas.clientHeight;
@@ -844,7 +875,8 @@ export async function run() {
                         loadOp: "clear",
                         clearValue: [0, 0, 0, 1],
                         storeOp: "store",
-                        view: context!.getCurrentTexture().createView(),
+                        view: colorBuffer.createView(),
+                        resolveTarget: context!.getCurrentTexture().createView(),
                     },
                 ],
             });
@@ -861,11 +893,12 @@ export async function run() {
                         loadOp: "load",
                         //clearValue: [0.08, 0.1, 0.54, 1],
                         storeOp: "store",
-                        view: context!.getCurrentTexture().createView(),
+                        view: colorBuffer.createView(),
+                        resolveTarget: context!.getCurrentTexture().createView(),
                     },
                 ],
                 depthStencilAttachment: {
-                    view: depthTexture.createView(),
+                    view: depthBuffer.createView(),
                     depthClearValue: 1,
                     depthLoadOp: "clear",
                     depthStoreOp: "store",
@@ -896,11 +929,12 @@ export async function run() {
                         loadOp: "load",
                         clearValue: [0, 0, 0, 1],
                         storeOp: "store",
-                        view: context!.getCurrentTexture().createView(),
+                        view: colorBuffer.createView(),
+                        resolveTarget: context!.getCurrentTexture().createView(),
                     },
                 ],
                 depthStencilAttachment: {
-                    view: depthTexture.createView(),
+                    view: depthBuffer.createView(),
                     depthClearValue: 1,
                     depthLoadOp: "load",
                     depthStoreOp: "store",
@@ -931,11 +965,12 @@ export async function run() {
                         loadOp: "load",
                         clearValue: [0, 0, 0, 1],
                         storeOp: "store",
-                        view: context!.getCurrentTexture().createView(),
+                        view: colorBuffer.createView(),
+                        resolveTarget: context!.getCurrentTexture().createView(),
                     },
                 ],
                 depthStencilAttachment: {
-                    view: depthTexture.createView(),
+                    view: depthBuffer.createView(),
                     depthClearValue: 1,
                     depthLoadOp: "load",
                     depthStoreOp: "store",
